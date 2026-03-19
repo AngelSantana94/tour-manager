@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* 1. IMPORTANTE: Así se carga DaisyUI en la v4 */
+@plugin "daisyui";
+
+@theme {
+  /* Colores mapeados a tus variables */
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-main-bg: var(--bg-main);
+  --color-main-text: var(--text-main);
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+}
+
+:root {
+  /* Tema Claro */
+  --primary: #ff6b35;
+  --secondary: #1a202c;
+  --bg-main: #ffffff;
+  --text-main: #1a202c;
+
+  /* Mapeo para que DaisyUI use tus colores */
+  --color-primary: rgb(138, 60, 184);
+  --color-base-100: #ffffff;
+}
+
+[data-theme="dark"] {
+  /* Tema Oscuro */
+  --primary: rgb(138, 60, 184);
+  --secondary: #f7fafc;
+  --bg-main: #121212;
+  --text-main: #f1f5f9;
+
+  /* Mapeo para que DaisyUI en dark use tus colores */
+  --color-base-100: #121212;
+}
+
+@layer base {
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    transition:
+      background-color 0.3s,
+      color 0.3s;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+}
