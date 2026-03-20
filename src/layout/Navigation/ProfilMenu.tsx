@@ -47,10 +47,11 @@ function Modal({ open, onClose, children }: {
 }
 
 interface Props {
-  side?: "left" | "right";
+  side?:           "left" | "right";
+  mobileDropDown?: "up" | "down";
 }
 
-export default function ProfileMenu({ side = "right" }: Props) {
+export default function ProfileMenu({ side = "right", mobileDropDown = "up" }: Props) {
   const { profile, signOut } = useAuth();
 
   const [open,          setOpen]          = useState(false);
@@ -159,8 +160,7 @@ export default function ProfileMenu({ side = "right" }: Props) {
             transition={{ duration: 0.15 }}
             className={[
               "absolute w-56 bg-base-100 border border-base-content/10 rounded-2xl shadow-xl overflow-hidden",
-              // Móvil: sube sobre el MobileMenu | Desktop: baja bajo el avatar
-              "bottom-14 lg:bottom-auto lg:top-12",
+              mobileDropDown === "up" ? "bottom-14 lg:bottom-auto lg:top-12" : "top-12",
               side === "right" ? "right-0" : "left-0",
             ].join(" ")}
             style={{ zIndex: 9999 }}

@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Menu, BarChart3, Calendar, User } from "lucide-react";
+import { BarChart3, User, Calendar, MessageSquare,
+  Wallet } from "lucide-react";
 import type { ActiveView } from "../DashboardLayout";
-import NotificationsMobile from "../../Notifications/NotificationsMobile";
-import ProfileMenu from "./ProfilMenu";
 
 type MobileTab = ActiveView | "avisos" | "perfil";
 
@@ -23,21 +22,6 @@ function MobileMenu({ activeView, onNavigate }: Props) {
 
   return (
     <div className="fixed bottom-0 left-0 z-50 w-full h-16 bg-base-100 border-t border-base-content/5 flex items-center px-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
-      {/* Menú — abre el drawer */}
-      <label
-        htmlFor="my-drawer-4"
-        className="flex flex-col items-center justify-center gap-1 flex-1 h-full cursor-pointer active:scale-90 transition-transform"
-      >
-        <Menu
-          size={22}
-          strokeWidth={1.8}
-          className="text-base-content opacity-40"
-        />
-        <span className="text-[10px] font-medium text-base-content opacity-40">
-          Menú
-        </span>
-      </label>
-
       {/* Métricas */}
       <button
         onClick={() => handleTab("metricas", "metricas")}
@@ -59,6 +43,31 @@ function MobileMenu({ activeView, onNavigate }: Props) {
             className={`text-[10px] font-medium ${isActive("metricas") ? "text-primary" : "text-base-content opacity-40"}`}
           >
             Métricas
+          </span>
+        </div>
+      </button>
+
+      {/* Guias */}
+      <button
+        onClick={() => handleTab("guias", "guias")}
+        className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
+      >
+        <div
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("metricas") ? "bg-primary/10" : ""}`}
+        >
+          <User
+            size={22}
+            strokeWidth={isActive("guias") ? 2.5 : 1.8}
+            className={
+              isActive("metricas")
+                ? "text-primary"
+                : "text-base-content opacity-40"
+            }
+          />
+          <span
+            className={`text-[10px] font-medium ${isActive("guias") ? "text-primary" : "text-base-content opacity-40"}`}
+          >
+            Guías
           </span>
         </div>
       </button>
@@ -88,30 +97,52 @@ function MobileMenu({ activeView, onNavigate }: Props) {
         </div>
       </button>
 
-      {/* Avisos — componente propio con modal y punto rojo */}
-      <NotificationsMobile
-        isActive={isActive("avisos")}
-        onClick={() => setActiveTab("avisos")}
-      />
-
-      {/* Perfil */}
+      {/* Mensajes */}
       <button
-        onClick={() => handleTab("perfil")}
+        onClick={() => handleTab("mensajes", "mensajes")}
         className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
       >
         <div
-          className={`flex flex-col items-center gap-1 px-2 py-1 rounded-xl transition-colors ${isActive("perfil") ? "bg-primary/10" : ""}`}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("mensajes") ? "bg-primary/10" : ""}`}
         >
-          <div
-            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isActive("perfil") ? "border-primary text-primary" : "border-base-content/20 text-base-content opacity-40"}`}
-          >
-            
-            <ProfileMenu/>
-          </div>
+          <MessageSquare
+            size={22}
+            strokeWidth={isActive("mensajes") ? 2.5 : 1.8}
+            className={
+              isActive("mensajes")
+                ? "text-primary"
+                : "text-base-content opacity-40"
+            }
+          />
           <span
-            className={`text-[10px] font-medium ${isActive("perfil") ? "text-primary" : "text-base-content opacity-40"}`}
+            className={`text-[10px] font-medium ${isActive("mensajes") ? "text-primary" : "text-base-content opacity-40"}`}
           >
-            Perfil
+            Mensajes
+          </span>
+        </div>
+      </button>
+
+      {/* Facturación */}
+      <button
+        onClick={() => handleTab("facturacion", "facturacion")}
+        className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
+      >
+        <div
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("facturacion") ? "bg-primary/10" : ""}`}
+        >
+          <Wallet
+            size={22}
+            strokeWidth={isActive("facturacion") ? 2.5 : 1.8}
+            className={
+              isActive("facturacion")
+                ? "text-primary"
+                : "text-base-content opacity-40"
+            }
+          />
+          <span
+            className={`text-[10px] font-medium ${isActive("facturacion") ? "text-primary" : "text-base-content opacity-40"}`}
+          >
+            Facturación
           </span>
         </div>
       </button>
