@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Bell, Check, CheckCheck, Trash2, X } from "lucide-react";
 import ReactDOM from "react-dom";
-import { useNotifications, type Notification, type NotifType } from "./useNotifications";
+import { useNotifications, type Notification, type NotifType } from "./UseNotifications";
 
 const TYPE_CONFIG: Record<NotifType, { label: string; dot: string; text: string }> = {
   reservation:  { label: "Nueva reserva", dot: "bg-success", text: "text-success" },
