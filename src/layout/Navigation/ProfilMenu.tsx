@@ -295,8 +295,8 @@ export default function ProfileMenu({ side = "right", mobileDropDown = "up" }: P
       </AnimatePresence>
 
       {/* MÓVIL — bottom sheet via portal */}
-      {open && ReactDOM.createPortal(
-        <div id="profile-sheet" className="lg:hidden" style={{ position: "fixed", inset: 0, zIndex: 99999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+      {open && window.innerWidth < 1024 && ReactDOM.createPortal(
+        <div id="profile-sheet" style={{ position: "fixed", inset: 0, zIndex: 99999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
           <div
             style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
             onClick={() => setOpen(false)}
@@ -304,8 +304,9 @@ export default function ProfileMenu({ side = "right", mobileDropDown = "up" }: P
           <motion.div
             initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
             transition={{ type: "spring", stiffness: 260, damping: 25 }}
+            className="bg-base-100"
             style={{
-              position: "relative", background: "var(--b1, #fff)",
+              position: "relative",
               borderTopLeftRadius: "1.5rem", borderTopRightRadius: "1.5rem",
               boxShadow: "0 -10px 40px rgba(0,0,0,0.2)",
               paddingBottom: "env(safe-area-inset-bottom, 16px)",

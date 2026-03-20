@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Bell, Check, CheckCheck, Trash2, X } from "lucide-react";
 import ReactDOM from "react-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { useNotifications, type Notification, type NotifType } from "./UseNotifications";
 
 const TYPE_CONFIG: Record<NotifType, { label: string; dot: string; text: string }> = {
@@ -97,7 +98,12 @@ export default function NotificationBell() {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (!ref.current) return;
+      if (ref.current.contains(e.target as Node)) return;
+      // No cerrar si el click es dentro del portal
+      const portalEl = document.getElementById("notif-sheet");
+      if (portalEl && portalEl.contains(e.target as Node)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -120,46 +126,57 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {open && (
-        <>
-          {/* DESKTOP — dropdown normal */}
-          <div className="hidden md:flex absolute right-0 top-10 w-80 bg-base-100 border border-base-content/10 rounded-2xl shadow-2xl z-[200] overflow-hidden flex-col max-h-[420px]">
-            <PanelContent {...props} />
-          </div>
-
-          {/* MÓVIL — portal para escapar del stacking context del header */}
-          {ReactDOM.createPortal(
-            <div
-              style={{
-                position: "fixed", inset: 0, zIndex: 99999,
-                display: window.innerWidth < 768 ? "flex" : "none",
-                flexDirection: "column", justifyContent: "flex-start",
-              }}
+      <AnimatePresence>
+        {open && (
+          <>
+            {/* DESKTOP — dropdown normal */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ duration: 0.15 }}
+              className="hidden lg:flex lg:flex-col absolute right-0 top-10 w-80 bg-base-100 border border-base-content/10 rounded-2xl shadow-2xl overflow-hidden"
+              style={{ zIndex: 9999, maxHeight: 420 }}
             >
+              <PanelContent {...props} />
+            </motion.div>
+
+            {/* MÓVIL — bottom sheet via portal, mismo patrón que ProfileMenu */}
+            {window.innerWidth < 1024 && ReactDOM.createPortal(
               <div
-                style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
-                onClick={() => setOpen(false)}
-              />
-              <div
-                style={{
-                  position: "relative", marginTop: "56px", maxHeight: "72vh",
-                  display: "flex", flexDirection: "column",
-                  background: "var(--b1, #fff)",
-                  borderBottomLeftRadius: "1rem", borderBottomRightRadius: "1rem",
-                  boxShadow: "0 25px 50px rgba(0,0,0,0.25)",
-                  width: "100%",
-                }}
+                id="notif-sheet"
+                style={{ position: "fixed", inset: 0, zIndex: 99999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
               >
-                <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 8px" }}>
-                  <div style={{ width: 48, height: 6, borderRadius: 9999, background: "rgba(0,0,0,0.15)" }} />
-                </div>
-                <PanelContent {...props} />
-              </div>
-            </div>,
-            document.body
-          )}
-        </>
-      )}
+                {/* Overlay */}
+                <div
+                  style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+                  onClick={() => setOpen(false)}
+                />
+                {/* Panel */}
+                <motion.div
+                  initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+                  transition={{ type: "spring", stiffness: 260, damping: 25 }}
+                  className="bg-base-100"
+                  style={{
+                    position: "relative",
+                    borderTopLeftRadius: "1.5rem", borderTopRightRadius: "1.5rem",
+                    boxShadow: "0 -10px 40px rgba(0,0,0,0.2)",
+                    paddingBottom: "env(safe-area-inset-bottom, 16px)",
+                    maxHeight: "80vh", display: "flex", flexDirection: "column",
+                  }}
+                >
+                  {/* Handle */}
+                  <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
+                    <div style={{ width: 48, height: 6, borderRadius: 9999, background: "rgba(128,128,128,0.3)" }} />
+                  </div>
+                  <PanelContent {...props} />
+                </motion.div>
+              </div>,
+              document.body
+            )}
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
