@@ -5,7 +5,7 @@ import {
   useBillingData, updateGuideCredits, fetchAllGuides,
   getCostForReservation, getCreditsForReservation,
   type GuideProfile, type BillingTour, type BillingReservation,
-} from "./useBillingData";
+} from "./UseBillingData";
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const PLATFORM_LABELS: Record<string, string> = {
