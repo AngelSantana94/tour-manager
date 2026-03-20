@@ -1,4 +1,4 @@
-import NotificationBell from "../../Notifications/NotifiationBell";
+import NotificationBell from "../../Notifications/NotificationBell";
 import ProfileMenu from "./ProfilMenu";
 
 
