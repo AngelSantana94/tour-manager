@@ -36,7 +36,6 @@ import {
 } from "../../Calendars/Services/SupabaseTGB.adapter";
 import type { Profile } from "../../login/AuthContext";
 
-
 // Ventana de días TGB a incluir en el contexto (ajustable). Se mantiene
 // acotada a propósito para no disparar el tamaño del prompt.
 const TGB_PAST_DAYS = 3;
@@ -279,7 +278,9 @@ async function callGemini(
   }
 
   if (data?.error) {
-    throw new Error(`Gemini Error: ${data.error.message || JSON.stringify(data.error)}`);
+    throw new Error(
+      `Gemini Error: ${data.error.message || JSON.stringify(data.error)}`,
+    );
   }
 
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Sin respuesta";
