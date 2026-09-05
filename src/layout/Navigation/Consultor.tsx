@@ -41,7 +41,7 @@ import type { Profile } from "../../login/AuthContext";
 // .env debe estar como VITE_GEMINI_API_KEY=... (no GEMINI_API_KEY a secas),
 // y hay que reiniciar `npm run dev` tras cambiarlo — Vite solo lee el .env
 // al arrancar.
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string;
+const GEMINI_API_KEY = "AIzaSyC1b82VDM4Ztp9MUHpsEPEGpGZHIeeb-sc";
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 // Ventana de días TGB a incluir en el contexto (ajustable). Se mantiene
