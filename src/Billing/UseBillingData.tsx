@@ -347,6 +347,20 @@ export async function addGuideBalanceEntry(input: {
   if (error) throw new Error(error.message);
 }
 
+// Borra una entrada de saldo añadida por error (p.ej. el guía puso 100€ en
+// vez de 50€). No hay "editar" a propósito: como el saldo del mes se
+// recalcula siempre por acumulado (añadido - consumido), restar a mano
+// rompería el histórico; borrar la entrada mal puesta y, si hace falta,
+// añadir una nueva con el importe correcto es lo que mantiene el cálculo
+// consistente.
+export async function deleteGuideBalanceEntry(id: string) {
+  const { error } = await supabase
+    .from("guide_balance_entries")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 async function fetchBalanceEntriesForMonth(
   guideId: string,
   month: string,

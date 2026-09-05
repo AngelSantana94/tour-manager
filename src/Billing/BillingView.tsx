@@ -23,6 +23,7 @@ import {
   buildBillingEntries,
   getCostForReservation,
   deleteManualBillingEntry,
+  deleteGuideBalanceEntry,
   BALANCE_PLATFORMS,
   type BillingEntry,
   type BillingMode,
@@ -149,6 +150,68 @@ function BalanceCard({
   );
 }
 
+// ─── CONFIRMACIÓN DE BORRADO DE SALDO ──────────────────────────────────────────
+// Minimalista y responsive: mismo patrón visual que el resto de modales de
+// esta vista (overlay + tarjeta centrada, botón de acción en negro), pero
+// dedicado a mostrar el importe exacto que se va a borrar para que el guía
+// confirme sabiendo qué está quitando.
+function DeleteBalanceConfirmModal({
+  entry,
+  saving,
+  onCancel,
+  onConfirm,
+}: {
+  entry: GuideBalanceEntry;
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !saving) onCancel();
+      }}
+    >
+      <div className="bg-base-100 rounded-2xl shadow-xl w-full max-w-sm p-5 flex flex-col gap-4">
+        <h3 className="text-base font-bold">¿Eliminar este saldo?</h3>
+        <p className="text-sm opacity-70 leading-relaxed">
+          Vas a borrar{" "}
+          <span className="font-bold text-base-content">
+            +€{Number(entry.amount).toFixed(2)}
+          </span>{" "}
+          añadidos a{" "}
+          <span className="font-semibold">
+            {PLATFORM_LABELS[entry.platform] ?? entry.platform}
+          </span>{" "}
+          el {formatEntryDate(entry.entry_date)}. Esta acción no se puede
+          deshacer.
+        </p>
+        <div className="grid grid-cols-2 gap-3 pt-1">
+          <button
+            onClick={onCancel}
+            disabled={saving}
+            className="btn btn-outline border-base-content/20 disabled:opacity-40"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={saving}
+            className="btn bg-base-content text-base-100 hover:bg-base-content/85 border-none disabled:opacity-40"
+          >
+            {saving ? (
+              <span className="loading loading-spinner loading-xs" />
+            ) : (
+              "Aceptar"
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── EXPORTAR A .XLSX (plantilla inspirada en el Excel de comisiones) ─────────
 function exportToExcel(
   guide: GuideProfile,
@@ -249,6 +312,11 @@ export default function BillingView() {
   const [deleting, setDeleting] = useState(false);
   const [balancePlatform, setBalancePlatform] =
     useState<BalancePlatform | null>(null);
+  // Confirmación de borrado de una entrada de saldo (independiente de
+  // `deletingId`, que es para entradas manuales de tour).
+  const [deletingBalance, setDeletingBalance] =
+    useState<GuideBalanceEntry | null>(null);
+  const [deletingBalanceSaving, setDeletingBalanceSaving] = useState(false);
 
   // Solo se ve la facturación del guía que ha iniciado sesión — nada de
   // selector para mirar la de otros guías.
@@ -365,6 +433,18 @@ export default function BillingView() {
     } finally {
       setDeleting(false);
       setDeletingId(null);
+    }
+  }
+
+  async function handleConfirmDeleteBalance() {
+    if (!deletingBalance) return;
+    setDeletingBalanceSaving(true);
+    try {
+      await deleteGuideBalanceEntry(deletingBalance.id);
+      refetchBalance();
+    } finally {
+      setDeletingBalanceSaving(false);
+      setDeletingBalance(null);
     }
   }
 
@@ -514,16 +594,19 @@ export default function BillingView() {
                 Desglose por plataforma
               </h2>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                {/* min-w fuerza el scroll lateral en móvil en vez de apretar
+                    las columnas — con px-4 en cada celda queda espacio real
+                    entre ellas y cada columna cae recta hacia abajo. */}
+                <table className="w-full min-w-[420px] text-sm">
                   <thead>
                     <tr className="border-b border-base-content/5">
-                      <th className="text-left py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-left py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Plataforma
                       </th>
-                      <th className="text-right py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-right py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Adultos
                       </th>
-                      <th className="text-right py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-right py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Comisión
                       </th>
                     </tr>
@@ -534,13 +617,13 @@ export default function BillingView() {
                         key={row.platform}
                         className="border-b border-base-content/5 last:border-b-0"
                       >
-                        <td className="py-3 font-semibold">
+                        <td className="py-3 px-4 font-semibold">
                           {PLATFORM_LABELS[row.platform] ?? row.platform}
                         </td>
-                        <td className="py-3 text-right opacity-70">
+                        <td className="py-3 px-4 text-right opacity-70">
                           {row.adults}
                         </td>
-                        <td className="py-3 text-right font-bold">
+                        <td className="py-3 px-4 text-right font-bold">
                           €{row.cost.toFixed(2)}
                         </td>
                       </tr>
@@ -564,28 +647,31 @@ export default function BillingView() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                {/* min-w fuerza el scroll lateral en móvil en vez de apretar
+                    las 7 columnas — con px-4 en cada celda queda espacio
+                    real entre ellas y cada columna cae recta hacia abajo. */}
+                <table className="w-full min-w-[760px] text-sm">
                   <thead>
                     <tr className="border-b border-base-content/5">
-                      <th className="text-left py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-left py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Fecha
                       </th>
-                      <th className="text-left py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-left py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Hora
                       </th>
-                      <th className="text-right py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-right py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Adultos
                       </th>
-                      <th className="text-right py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-right py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Niños
                       </th>
-                      <th className="text-left py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-left py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Plataforma
                       </th>
-                      <th className="text-right py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-right py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Comisión
                       </th>
-                      <th className="text-right py-2 text-xs font-bold opacity-40 uppercase tracking-wider">
+                      <th className="text-right py-2 px-4 text-xs font-bold opacity-40 uppercase tracking-wider">
                         Acciones
                       </th>
                     </tr>
@@ -599,20 +685,33 @@ export default function BillingView() {
                             key={`balance:${b.id}`}
                             className="border-b border-base-content/5 last:border-b-0 bg-emerald-50"
                           >
-                            <td className="py-3 font-semibold capitalize text-emerald-700">
+                            <td className="py-3 px-4 font-semibold capitalize text-emerald-700">
                               {formatEntryDate(b.entry_date)}
                             </td>
                             <td
                               colSpan={4}
-                              className="py-3 font-semibold text-emerald-700"
+                              className="py-3 px-4 font-semibold text-emerald-700"
                             >
                               Saldo añadido por el guía ·{" "}
                               {PLATFORM_LABELS[b.platform] ?? b.platform}
                             </td>
-                            <td className="py-3 text-right font-bold text-emerald-700">
+                            <td className="py-3 px-4 text-right font-bold text-emerald-700">
                               +€{Number(b.amount).toFixed(2)}
                             </td>
-                            <td />
+                            {/* Botón de borrar separado en su propia columna
+                                (Acciones), a distancia del importe, pero con
+                                el mismo estilo discreto que las acciones de
+                                las filas manuales de abajo. */}
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => setDeletingBalance(b)}
+                                className="btn btn-ghost btn-xs btn-circle opacity-40 hover:opacity-80"
+                                aria-label="Eliminar saldo"
+                                title="Eliminar saldo"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </td>
                           </tr>
                         );
                       }
@@ -628,19 +727,19 @@ export default function BillingView() {
                           key={e.id}
                           className="border-b border-base-content/5 last:border-b-0 hover:bg-base-content/[0.02]"
                         >
-                          <td className="py-3 font-semibold capitalize">
+                          <td className="py-3 px-4 font-semibold capitalize">
                             {formatEntryDate(e.date)}
                           </td>
-                          <td className="py-3 font-mono opacity-60">
+                          <td className="py-3 px-4 font-mono opacity-60">
                             {e.time}
                           </td>
-                          <td className="py-3 text-right opacity-70">
+                          <td className="py-3 px-4 text-right opacity-70">
                             {e.adults}
                           </td>
-                          <td className="py-3 text-right opacity-70">
+                          <td className="py-3 px-4 text-right opacity-70">
                             {e.children}
                           </td>
-                          <td className="py-3 opacity-70 text-xs">
+                          <td className="py-3 px-4 opacity-70 text-xs">
                             <div className="flex items-center gap-1.5">
                               {PLATFORM_LABELS[e.platform] ?? e.platform}
                               {e.source === "manual" && (
@@ -650,10 +749,10 @@ export default function BillingView() {
                               )}
                             </div>
                           </td>
-                          <td className="py-3 text-right font-bold">
+                          <td className="py-3 px-4 text-right font-bold">
                             €{cost.toFixed(2)}
                           </td>
-                          <td className="py-3 text-right">
+                          <td className="py-3 px-4 text-right">
                             {e.source === "manual" && (
                               <div className="flex items-center justify-end gap-1">
                                 <button
@@ -682,13 +781,13 @@ export default function BillingView() {
                       );
                     })}
                     <tr className="border-t-2 border-base-content/10 font-bold bg-base-200/30">
-                      <td colSpan={2} className="py-3 pl-2">
+                      <td colSpan={2} className="py-3 px-4">
                         Total del mes
                       </td>
-                      <td className="py-3 text-right">{totalAdults}</td>
-                      <td className="py-3 text-right">{totalChildren}</td>
+                      <td className="py-3 px-4 text-right">{totalAdults}</td>
+                      <td className="py-3 px-4 text-right">{totalChildren}</td>
                       <td />
-                      <td className="py-3 text-right text-base font-black">
+                      <td className="py-3 px-4 text-right text-base font-black">
                         €{(guruCost + freeCost).toFixed(2)}
                       </td>
                       <td />
@@ -722,6 +821,15 @@ export default function BillingView() {
           loading={deleting}
           onCancel={() => setDeletingId(null)}
           onConfirm={handleConfirmDelete}
+        />
+      )}
+
+      {deletingBalance && (
+        <DeleteBalanceConfirmModal
+          entry={deletingBalance}
+          saving={deletingBalanceSaving}
+          onCancel={() => setDeletingBalance(null)}
+          onConfirm={handleConfirmDeleteBalance}
         />
       )}
 

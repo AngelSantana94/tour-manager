@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from "react";
 import {
   Sparkles,
   X,
@@ -14,6 +21,7 @@ import {
   AlertTriangle,
   Wallet,
   Bell,
+  Pencil,
 } from "lucide-react";
 // Dos proyectos, dos clientes: OTA (tours de plataformas externas + reservas +
 // pines) y TGB (Tu Guía en Brujas: tours/tour_schedule/bookings/schedule_exceptions).
@@ -21,7 +29,11 @@ import {
 // esquema de OTA — corregido: cada cliente se usa contra su propio esquema.
 import { supabase as supabaseOTA } from "../../lib/supabaseClientOTA";
 import { useAuth } from "../../login/AuthContext";
-import { useNotifications } from "../../Notifications/UseNotifications";
+import {
+  useNotifications,
+  type Notification,
+  type NotifType,
+} from "../../Notifications/UseNotifications";
 import {
   useBillingSettings,
   useGuideBalance,
@@ -41,6 +53,13 @@ import type { Profile } from "../../login/AuthContext";
 const TGB_PAST_DAYS = 3;
 const TGB_FUTURE_DAYS = 45;
 
+// El "día de Luna" no cambia a medianoche sino a las 6:00 — antes de esa hora
+// seguimos considerando que es "el día anterior" para el historial. Esto es
+// lo que hace que el chat se renueve solo de madrugada sin que nadie tenga
+// que borrarlo a mano: al abrir la app (o cada 5 min con la pestaña abierta)
+// se compara la fecha "de negocio" contra la guardada y si cambió se limpia.
+const HISTORY_RESET_HOUR = 6;
+
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 type Role = "user" | "assistant" | "system";
 
@@ -50,6 +69,11 @@ interface Message {
   content: string;
   pending?: boolean;
   action?: PendingAction;
+  // Cuando el mensaje viene de una notificación (reserva/edición/cancelación),
+  // guardamos el tipo aparte en vez de incrustar la cabecera dentro del texto.
+  // Así el salto de línea y el estilo por tipo son estructurales (JSX), no
+  // dependen de que el string tenga un "\n" bien colocado.
+  notifKind?: NotifType;
 }
 
 interface PendingAction {
@@ -63,7 +87,7 @@ interface PendingAction {
   payload: Record<string, any>;
 }
 
-// ─── HISTORIAL — por guía (id real de Supabase Auth), limpia cada 24h ────────
+// ─── HISTORIAL — por guía (id real de Supabase Auth), limpia cada día a las 6am ──
 function historyKeys(guideId: string) {
   return {
     HISTORY_KEY: `luna_history_${guideId}`,
@@ -71,11 +95,19 @@ function historyKeys(guideId: string) {
   };
 }
 
+// Clave de "día laboral" de Luna: si son las 05:59, todavía cuenta como el
+// día de ayer. A partir de las 06:00 ya es un día nuevo.
+function businessDateKey(d: Date = new Date()): string {
+  const shifted = new Date(d);
+  shifted.setHours(shifted.getHours() - HISTORY_RESET_HOUR);
+  return shifted.toDateString();
+}
+
 function loadHistory(guideId: string, fallback: Message): Message[] {
   const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(guideId);
   try {
     const savedDate = localStorage.getItem(HISTORY_DATE_KEY);
-    const today = new Date().toDateString();
+    const today = businessDateKey();
     if (savedDate !== today) {
       localStorage.removeItem(HISTORY_KEY);
       localStorage.setItem(HISTORY_DATE_KEY, today);
@@ -92,7 +124,7 @@ function saveHistory(guideId: string, messages: Message[]) {
   const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(guideId);
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
-    localStorage.setItem(HISTORY_DATE_KEY, new Date().toDateString());
+    localStorage.setItem(HISTORY_DATE_KEY, businessDateKey());
   } catch {}
 }
 
@@ -130,9 +162,14 @@ async function loadContext(): Promise<string> {
         tour: t.title,
         fecha: t.date,
         hora: t.time,
+        // La tabla de reservations usa ahora status = 'confirmada' | 'editada'
+        // | 'cancelada' (antes eran 'active'/'confirmed'/'cancelled' — si
+        // vuelves a tocar el esquema de status, actualiza también el filtro
+        // de abajo y las reglas 1 y 3 del system prompt más adelante en este
+        // archivo, o los totales de pax se quedan en 0 en silencio).
         pax_total_confirmado: t.reservations
           ?.filter(
-            (r: any) => r.status === "confirmed" || r.status === "active",
+            (r: any) => r.status === "confirmada" || r.status === "editada",
           )
           .reduce((sum: number, r: any) => sum + (r.pax || 0), 0),
         reservas: t.reservations?.map((r: any) => ({
@@ -183,6 +220,18 @@ async function loadContext(): Promise<string> {
   return JSON.stringify(paqueteCompleto, null, 2);
 }
 
+// Inserta un salto de línea justo después de la cabecera de la notificación
+// (p.ej. "Nueva reserva [Guruwalk]" o "Cancelación (Guruwalk)") seguida de
+// espacio, para que "Juan Pérez +32470123456" caiga en su propia línea y no
+// se pegue al final de la primera, provocando desborde horizontal.
+// Los mensajes que genera la edge function usan CORCHETES "[Guruwalk]", no
+// paréntesis — antes el regex solo reconocía "(...)" y por eso el salto de
+// línea nunca se aplicaba a las notificaciones reales de
+// reserva/edición/cancelación. Ahora reconoce ambos formatos.
+function breakAfterParenthetical(message: string): string {
+  return message.replace(/(\([^)]+\)|\[[^\]]+\])\s+/, "$1\n");
+}
+
 function buildGreeting(
   guideName: string,
   guruwalk: number,
@@ -192,7 +241,9 @@ function buildGreeting(
 ): string {
   const nombre = guideName || "guía";
   const notifText = notifs.length
-    ? notifs.map((n, i) => `${i + 1}. ${n}`).join("\n")
+    ? notifs
+        .map((n, i) => `${i + 1}. ${breakAfterParenthetical(n)}`)
+        .join("\n\n")
     : "No tienes notificaciones nuevas.";
 
   return `Hola ${nombre} 👋 Soy Luna.
@@ -206,6 +257,36 @@ ${notifText}
 ¿En qué te ayudo hoy?`;
 }
 
+// ─── ESTILOS DE NOTIFICACIÓN — un chip fijo por tipo (color + ícono + texto) ──
+// Se renderiza como bloque JSX aparte del cuerpo del mensaje, así el salto de
+// línea entre cabecera y contenido es estructural (nunca depende de si el
+// string trae o no un "\n"), y cada tipo queda visualmente diferenciado para
+// que no se puedan confundir entre sí aunque lleguen varias seguidas.
+// `icon` se tipa como ReactNode (no JSX.Element): este archivo no importa
+// React ni tiene el namespace JSX disponible, y JSX.Element aquí rompía la
+// compilación ("Cannot find namespace 'JSX'"), haciendo que el widget entero
+// desapareciera de la app.
+const NOTIF_STYLES: Record<
+  NotifType,
+  { label: string; icon: ReactNode; badgeClass: string }
+> = {
+  reservation: {
+    label: "Reserva Confirmada",
+    icon: <CheckCircle size={13} />,
+    badgeClass: "bg-success/15 text-success",
+  },
+  cancellation: {
+    label: "Reserva Cancelada",
+    icon: <XCircle size={13} />,
+    badgeClass: "bg-error/15 text-error",
+  },
+  modification: {
+    label: "Reserva Editada",
+    icon: <Pencil size={13} />,
+    badgeClass: "bg-warning/15 text-warning",
+  },
+};
+
 // ─── SYSTEM PROMPT (con personalidad) ────────────────────────────────────────
 function buildSystemPrompt(context: string): string {
   return `Eres "Luna", consultora analítica de Tu Guía en Brujas.
@@ -215,9 +296,9 @@ Tu única fuente de verdad es el JSON adjunto, que tiene dos orígenes distintos
 No los mezcles al responder — si preguntan por "los tours" en general, acláralo por origen si hace falta.
 
 REGLAS CRÍTICAS DE CONTEO:
-1. Para dar totales de personas en tours_ota, suma SOLO las reservas donde status sea 'confirmed' o 'active'.
+1. Para dar totales de personas en tours_ota, suma SOLO las reservas donde status sea 'confirmada' o 'editada'.
 2. Para tours_tgb, pax_confirmado ya viene calculado sin contar canceladas — úsalo directamente, no sumes tú las reservas individuales salvo que te pidan el detalle.
-3. Si una reserva de tours_ota dice 'cancelled', 'missing' o 'denied', IGUÁLALA A CERO para el conteo de personas.
+3. Si una reserva de tours_ota dice status 'cancelada', IGUÁLALA A CERO para el conteo de personas.
 4. Si el usuario pregunta por "hoy", busca la fecha exacta: ${new Date().toISOString().split("T")[0]}.
 5. NUNCA inventes nombres de guías. Si en el dato dice guide: null, di que no tiene guía asignado.
 6. Si no ves datos para una fecha, di: "No tengo registros para ese día", no asumas tours habituales.
@@ -381,9 +462,21 @@ function WhatsAppIcon({ size = 15 }: { size?: number }) {
   );
 }
 
+// Excluye fechas y horas antes de aceptar una cadena como candidata a teléfono.
+// Antes solo excluía el formato ISO (YYYY-MM-DD); las notificaciones venían con
+// fechas en otros formatos (DD-MM-YYYY, DD/MM/YYYY) u horas (HH:MM), que sí
+// pasaban el filtro de "8 a 15 dígitos" y se envolvían con el botón de
+// WhatsApp por error — de ahí el falso positivo y el desborde asociado.
 function isPhoneCandidate(value: string): boolean {
-  const digits = value.replace(/\D/g, "");
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return false;
+  const trimmed = value.trim();
+
+  // Fechas en cualquier orden/separador: 2026-09-05, 05-09-2026, 05/09/2026, 05.09.2026...
+  if (/^\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}$/.test(trimmed)) return false;
+
+  // Horas: 15:00, 15:00:00
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed)) return false;
+
+  const digits = trimmed.replace(/\D/g, "");
   return digits.length >= 8 && digits.length <= 15;
 }
 
@@ -549,6 +642,33 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
     saveHistory(guideId, messages);
   }, [messages, guideId]);
 
+  // ── Reinicio automático a las 6:00 aunque la pestaña quede abierta toda la
+  // noche (sin esto, el corte de "día" solo se aplicaba al recargar la app) ──
+  useEffect(() => {
+    const id = setInterval(
+      () => {
+        const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(guideId);
+        const stored = localStorage.getItem(HISTORY_DATE_KEY);
+        const current = businessDateKey();
+        if (stored && stored !== current) {
+          localStorage.removeItem(HISTORY_KEY);
+          localStorage.setItem(HISTORY_DATE_KEY, current);
+          setMessages([
+            {
+              id: "0",
+              role: "assistant",
+              content:
+                "¡Hola! Soy Luna, tu consultora IA. Cargando tu resumen…",
+            },
+          ]);
+          setGreeted(false);
+        }
+      },
+      5 * 60 * 1000,
+    );
+    return () => clearInterval(id);
+  }, [guideId]);
+
   // ── Al abrir: cargar contexto de tours + saludo con saldo/notificaciones reales ──
   useEffect(() => {
     if (!open || greeted || !billingReady) return;
@@ -578,6 +698,41 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, greeted, billingReady]);
+
+  // ── Notificaciones nuevas → mensaje de Luna en el chat, con cabecera fija
+  // (✅ Reserva Confirmada / ✏️ Reserva Editada / ❌ Reserva Cancelada) ──────
+  const seenNotifIds = useRef<Set<string>>(new Set());
+  const notifsBooted = useRef(false);
+
+  useEffect(() => {
+    if (loadingNotifs) return;
+
+    // Primera carga: solo memorizamos qué notificaciones ya existían, sin
+    // reinyectarlas todas en el chat de golpe.
+    if (!notifsBooted.current) {
+      notifications.forEach((n) => seenNotifIds.current.add(n.id));
+      notifsBooted.current = true;
+      return;
+    }
+
+    const nuevas = notifications.filter((n) => !seenNotifIds.current.has(n.id));
+    if (!nuevas.length) return;
+    nuevas.forEach((n) => seenNotifIds.current.add(n.id));
+
+    // Vienen ordenadas más nueva primero (se prependean); las mostramos en
+    // orden cronológico dentro del chat.
+    const ordenadas = [...nuevas].reverse();
+
+    setMessages((prev) => [
+      ...prev,
+      ...ordenadas.map((n) => ({
+        id: `notif-${n.id}`,
+        role: "assistant" as const,
+        content: breakAfterParenthetical(n.message),
+        notifKind: n.type,
+      })),
+    ]);
+  }, [notifications, loadingNotifs]);
 
   // ── Scroll al último mensaje ────────────────────────────────────────────────
   useEffect(() => {
@@ -834,9 +989,20 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
                     key={msg.id}
                     className={`flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}
                   >
+                    {msg.notifKind && NOTIF_STYLES[msg.notifKind] && (
+                      <div
+                        className={[
+                          "flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full w-fit",
+                          NOTIF_STYLES[msg.notifKind].badgeClass,
+                        ].join(" ")}
+                      >
+                        {NOTIF_STYLES[msg.notifKind].icon}
+                        {NOTIF_STYLES[msg.notifKind].label}
+                      </div>
+                    )}
                     <div
                       className={[
-                        "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
+                        "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words",
                         msg.role === "user"
                           ? "bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white rounded-br-sm"
                           : "bg-base-200 text-base-content rounded-bl-sm",

@@ -276,14 +276,25 @@ async function findOrCreateTour(data: any): Promise<string> {
   return created.id;
 }
 
-// ─── GUARDAR RESERVA (con deduplicación por teléfono/booking_code + tour) ──────
-async function saveReservation(tourId: string, data: any, rawEmail: string) {
+// ─── GUARDAR RESERVA (con deduplicación por booking_code/teléfono + tour) ──────
+// `sendNotification` = false cuando esta función se usa como paso interno de
+// una MODIFICACIÓN sin reserva original encontrada (ver handleModification).
+// `status` permite marcar la fila como "confirmada" (reserva normal) o
+// "editada" (cuando se crea por una modificación cuya reserva original no
+// se localizó, para no perder el rastro de que viene de una edición).
+async function saveReservation(
+  tourId: string,
+  data: any,
+  rawEmail: string,
+  sendNotification: boolean = true,
+  status: "confirmada" | "editada" = "confirmada",
+) {
   const adults = Number(data.adults) || 0;
   const children = Number(data.children) || 0;
   const bookingCode = data.booking_code ?? null;
   const phone = data.phone ?? "";
 
-  // Deduplicación: buscar por booking_code (Turixe) o por teléfono
+  // Deduplicación: buscar por booking_code (cualquier plataforma) o por teléfono
   let existing = null;
   if (bookingCode) {
     const { data: found } = await supabase
@@ -320,9 +331,18 @@ async function saveReservation(tourId: string, data: any, rawEmail: string) {
     platform: data.platform ?? "other",
     booking_code: bookingCode,
     raw_email: rawEmail,
+    status,
   });
 
   if (error) throw new Error(`Error guardando reserva: ${error.message}`);
+
+  if (!sendNotification) {
+    console.log(
+      "Reserva guardada (sin notificar — viene de una modificación):",
+      data.contact_name,
+    );
+    return;
+  }
 
   // Notificación de nueva reserva
   const { data: tour } = await supabase
@@ -347,18 +367,32 @@ async function saveReservation(tourId: string, data: any, rawEmail: string) {
   console.log("Reserva guardada:", data.contact_name);
 }
 
-// ─── CANCELAR RESERVA ─────────────────────────────────────────────────────────
-async function handleCancellation(data: any): Promise<void> {
-  let reservation = null;
+// ─── BUSCAR RESERVA EXISTENTE por booking_code (cualquier plataforma) ──────────
+// Antes esto solo se hacía si platform === "turixe", así que GuruWalk y
+// FreeTour (que también traen código, ej. BRU12742362) nunca lo usaban y
+// caían siempre al fallback por teléfono+fecha, mucho más frágil. Como
+// saveReservation ya guarda el booking_code para todas las plataformas,
+// buscar por código aquí también funciona para todas.
+async function findReservationByCode(
+  bookingCode: string | null,
+  extraFields = "id, tour_id, adults, children, booking_code",
+): Promise<any | null> {
+  if (!bookingCode) return null;
+  const { data: found } = await supabase
+    .from("reservations").select(extraFields)
+    .eq("booking_code", bookingCode)
+    .maybeSingle();
+  return found;
+}
 
-  // Turixe: buscar por booking_code si lo tenemos
-  if (data.platform === "turixe" && data.booking_code) {
-    const { data: found } = await supabase
-      .from("reservations").select("id, tour_id")
-      .eq("booking_code", data.booking_code)
-      .maybeSingle();
-    reservation = found;
-  }
+// ─── CANCELAR RESERVA ─────────────────────────────────────────────────────────
+// Ya no se borra la fila: se marca status = "cancelada". Así el hilo por
+// booking_code (confirmada → editada → cancelada) queda completo en la BD
+// en vez de desaparecer, y una reserva que se cancela y se vuelve a crear
+// deja rastro de lo que pasó.
+async function handleCancellation(data: any): Promise<void> {
+  const lookupCode = data.booking_code ?? null;
+  let reservation = await findReservationByCode(lookupCode, "id, tour_id");
 
   // Fallback: buscar por teléfono + fecha + plataforma
   if (!reservation && data.phone) {
@@ -390,7 +424,7 @@ async function handleCancellation(data: any): Promise<void> {
 
   const tourId = reservation.tour_id;
 
-  // Notificación de cancelación — ANTES de borrar por si el tour desaparece
+  // Notificación de cancelación
   const { data: tourInfo } = await supabase
     .from("tours").select("date, time, platform").eq("id", tourId)
     .maybeSingle();
@@ -411,43 +445,34 @@ async function handleCancellation(data: any): Promise<void> {
     });
   }
 
-  await supabase.from("reservations").delete().eq("id", reservation.id);
-  console.log("Reserva cancelada:", data.contact_name);
+  await supabase.from("reservations")
+    .update({ status: "cancelada" })
+    .eq("id", reservation.id);
+  console.log("Reserva marcada como cancelada:", data.contact_name);
 
-  // Borrar tour huérfano si quedó vacío Y fue creado automáticamente
-  const { data: tour } = await supabase
-    .from("tours").select("source")
-    .eq("id", tourId).maybeSingle();
-
-  if (tour?.source === "auto") {
-    const { count } = await supabase
-      .from("reservations").select("id", { count: "exact", head: true })
-      .eq("tour_id", tourId);
-
-    if (count === 0) {
-      await supabase.from("tours").delete().eq("id", tourId);
-      console.log("Tour huérfano eliminado:", tourId);
-    }
-  }
+  // Nota: ya no se borran tours "huérfanos" al cancelar. Como la fila se
+  // conserva (status = cancelada) en vez de borrarse, el tour sigue
+  // teniendo esa reserva asociada y no está realmente vacío — además así
+  // se conserva el histórico del tour, no solo el de la reserva.
 }
 
 // ─── MODIFICAR RESERVA ────────────────────────────────────────────────────────
+// Antes: se borraba la reserva original y se insertaba una nueva (por eso
+// hacía falta el parche de sendNotification para no disparar una "Nueva
+// reserva" fantasma). Ahora: se ACTUALIZA la misma fila en su sitio — mismo
+// id, mismo booking_code — y se marca status = "editada". El hilo por
+// booking_code queda completo de verdad.
 async function handleModification(data: any, rawEmail: string): Promise<void> {
   console.log("Modificación detectada para:", data.contact_name);
 
   const originalDate = data.original_date ?? data.date;
-  const originalBookingCode = data.original_booking_code ?? null;
 
-  let originalReservation = null;
+  // Para Turixe el código nuevo viene null y el que sirve para buscar es
+  // original_booking_code. Para GuruWalk/FreeTour el código no cambia entre
+  // el email original y el de modificación, así que viene en booking_code.
+  const lookupCode = data.original_booking_code ?? data.booking_code ?? null;
 
-  // Turixe: buscar por booking_code original
-  if (data.platform === "turixe" && originalBookingCode) {
-    const { data: found } = await supabase
-      .from("reservations").select("id, tour_id")
-      .eq("booking_code", originalBookingCode)
-      .maybeSingle();
-    originalReservation = found;
-  }
+  let originalReservation = await findReservationByCode(lookupCode);
 
   // Fallback: buscar por teléfono + fecha original
   if (!originalReservation && data.phone) {
@@ -459,7 +484,9 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
     if (originalTours && originalTours.length > 0) {
       const tourIds = originalTours.map((t: any) => t.id);
       const { data: found } = await supabase
-        .from("reservations").select("id, tour_id")
+        .from("reservations").select(
+          "id, tour_id, adults, children, booking_code",
+        )
         .in("tour_id", tourIds)
         .eq("phone", data.phone)
         .maybeSingle();
@@ -467,70 +494,65 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
     }
   }
 
-  let oldTourId = null;
-  if (originalReservation) {
-    oldTourId = originalReservation.tour_id;
-    await supabase.from("reservations").delete().eq(
-      "id",
-      originalReservation.id,
-    );
-    console.log("Reserva original eliminada");
-  } else {
-    console.log("Reserva original no encontrada — solo se creará la nueva");
-  }
-
-  // Crear nueva reserva
   const newTourId = await findOrCreateTour(data);
-  await saveReservation(newTourId, data, rawEmail);
-  console.log("Reserva modificada guardada:", data.contact_name);
 
-  // Notificación de modificación — con detalle de qué cambió
-  const { data: tourInfo } = await supabase
-    .from("tours").select("date, time, platform").eq("id", newTourId)
-    .maybeSingle();
-  if (tourInfo) {
-    const fecha = new Date(tourInfo.date).toLocaleDateString("es-ES", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-    });
-    const plat = (data.platform ?? "other").charAt(0).toUpperCase() +
-      (data.platform ?? "other").slice(1);
-
-    // Detectar qué cambió
-    const parts: string[] = [];
-    const newPax = (Number(data.adults) || 0) + (Number(data.children) || 0);
-    const originalPax = (Number(data.original_adults) || 0) +
-      (Number(data.original_children) || 0);
-
-    if (data.original_date && data.original_date !== data.date) {
-      const fechaOrig = new Date(data.original_date).toLocaleDateString(
-        "es-ES",
-        { day: "2-digit", month: "2-digit" },
-      );
-      parts.push(`fecha ${fechaOrig} → ${fecha}`);
-    }
-    if (data.original_time && data.original_time !== data.time) {
-      parts.push(`hora ${data.original_time} → ${data.time}`);
-    }
-    if (originalPax && originalPax !== newPax) {
-      parts.push(`pax ${originalPax} → ${newPax}`);
-    }
-
-    const detalle = parts.length > 0
-      ? parts.join(", ")
-      : `${fecha} ${tourInfo.time?.slice(0, 5)}`;
-
-    await supabase.from("notifications").insert({
-      type: "modification",
-      message: `Modificación [${plat}] · ${
-        data.contact_name ?? "cliente"
-      } · ${detalle}`,
-      tour_id: newTourId,
-    });
+  if (!originalReservation) {
+    console.log("Reserva original no encontrada — solo se creará la nueva");
+    await saveReservation(newTourId, data, rawEmail, false, "editada");
+    await sendModificationNotification(data, newTourId, null, null, null);
+    return;
   }
 
-  // Borrar tour huérfano si quedó vacío Y fue creado automáticamente
+  // Estado REAL anterior — el que teníamos guardado nosotros mismos en la
+  // base, no el que reporta el email como "original". Algunos proveedores
+  // (FreeTour, Guruwalk) a veces informan como "original" el valor de la
+  // reserva de fábrica en vez del valor previo a ESTA edición concreta, lo
+  // que producía secuencias incoherentes tipo "3→4" y luego "3→1" en vez de
+  // "4→1". Comparando siempre contra nuestra propia base, el histórico
+  // queda encadenado correctamente sin importar lo que diga el email.
+  const oldTourId = originalReservation.tour_id;
+  const previousAdults = originalReservation.adults;
+  const previousChildren = originalReservation.children;
+
+  const { data: oldTourInfo } = await supabase
+    .from("tours").select("date, time").eq("id", oldTourId).maybeSingle();
+  const previousDate = oldTourInfo?.date ?? null;
+  const previousTime = oldTourInfo?.time ?? null;
+
+  const adults = Number(data.adults) || 0;
+  const children = Number(data.children) || 0;
+
+  // Si el email no trae booking_code nuevo (típico de Turixe), conservamos
+  // el que ya teníamos guardado — así no se pierde el código al editar.
+  const finalBookingCode = data.booking_code ??
+    originalReservation.booking_code ??
+    null;
+
+  await supabase.from("reservations").update({
+    tour_id: newTourId,
+    contact_name: data.contact_name ?? "",
+    phone: data.phone ?? "",
+    adults,
+    children,
+    pax: adults + children,
+    booking_code: finalBookingCode,
+    raw_email: rawEmail,
+    status: "editada",
+  }).eq("id", originalReservation.id);
+
+  console.log("Reserva modificada (misma fila):", data.contact_name);
+
+  await sendModificationNotification(
+    data,
+    newTourId,
+    previousDate,
+    previousTime,
+    previousAdults + previousChildren,
+  );
+
+  // Borrar tour huérfano si quedó vacío de verdad Y fue creado automáticamente.
+  // Como la reserva se movió de tour (update de tour_id), ya no cuenta en
+  // oldTourId, así que un count() aquí sí refleja huérfanos reales.
   if (oldTourId && oldTourId !== newTourId) {
     const { data: tour } = await supabase
       .from("tours").select("source")
@@ -547,6 +569,59 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
       }
     }
   }
+}
+
+// ─── NOTIFICACIÓN DE MODIFICACIÓN ──────────────────────────────────────────────
+async function sendModificationNotification(
+  data: any,
+  tourId: string,
+  previousDate: string | null,
+  previousTime: string | null,
+  previousPax: number | null,
+): Promise<void> {
+  const { data: tourInfo } = await supabase
+    .from("tours").select("date, time, platform").eq("id", tourId)
+    .maybeSingle();
+  if (!tourInfo) return;
+
+  const fecha = new Date(tourInfo.date).toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+  const plat = (data.platform ?? "other").charAt(0).toUpperCase() +
+    (data.platform ?? "other").slice(1);
+
+  const newPax = (Number(data.adults) || 0) + (Number(data.children) || 0);
+
+  const parts: string[] = [];
+  if (previousDate && previousDate !== tourInfo.date) {
+    const fechaOrig = new Date(previousDate).toLocaleDateString(
+      "es-ES",
+      { day: "2-digit", month: "2-digit" },
+    );
+    parts.push(`fecha ${fechaOrig} → ${fecha}`);
+  }
+  if (previousTime && previousTime.slice(0, 5) !== tourInfo.time?.slice(0, 5)) {
+    parts.push(
+      `hora ${previousTime.slice(0, 5)} → ${tourInfo.time?.slice(0, 5)}`,
+    );
+  }
+  if (previousPax !== null && previousPax !== newPax) {
+    parts.push(`pax ${previousPax} → ${newPax}`);
+  }
+
+  const detalle = parts.length > 0
+    ? parts.join(", ")
+    : `${fecha} ${tourInfo.time?.slice(0, 5)}`;
+
+  await supabase.from("notifications").insert({
+    type: "modification",
+    message: `Modificación [${plat}] · ${
+      data.contact_name ?? "cliente"
+    } · ${detalle}`,
+    tour_id: tourId,
+  });
 }
 
 // ─── LEER EMAILS NUEVOS (vía historial Gmail) ─────────────────────────────────
