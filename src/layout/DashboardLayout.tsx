@@ -5,11 +5,11 @@ import MobileMenu   from "./Navigation/MobileMenu";
 import CalendarView from "../Calendars/CalendarView";
 import Consultor    from "./Navigation/Consultor";
 import MetricsView  from "../Metrics/MetricsView";
-import Pins         from "../pins/Pins";
+import GuideAvailabilityBase from "../Availability/GuideAvailabilityBase";
 import GuidesView   from "../guides/GuidesView";
 import BillingView  from "../Billing/BillingView";
 
-export type ActiveView = "calendario" | "metricas" | "mensajes" | "guias" | "facturacion";
+export type ActiveView = "calendario" | "metricas" | "disponibilidad" | "guias" | "facturacion";
 
 function DashboardLayout() {
   const [activeView, setActiveView] = useState<ActiveView>("calendario");
@@ -28,7 +28,7 @@ function DashboardLayout() {
     switch (activeView) {
       case "metricas":    return <MetricsView />;
       case "calendario":  return <CalendarView />;
-      case "mensajes":    return <Pins />;
+      case "disponibilidad":    return <GuideAvailabilityBase />;
       case "guias":       return <GuidesView />;
       case "facturacion": return <BillingView />;
       default: return (

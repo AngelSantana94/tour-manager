@@ -12,7 +12,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SERVICE_ROLE_KEY")!
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
 // ─── ACCESS TOKEN ─────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ function extractEmailText(msg: any): { subject: string; from: string; body: stri
 // ─── GEMINI ───────────────────────────────────────────────────────────────────
 async function callGemini(email: { subject: string; from: string; body: string }): Promise<any> {
   const apiKey = Deno.env.get("GEMINI_API_KEY")!;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
 
   const prompt = `Eres un asistente que analiza emails de reservas de free tours y extrae datos estructurados.
 Devuelve ÚNICAMENTE un objeto JSON válido, sin texto adicional, sin backticks, sin explicaciones.

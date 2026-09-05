@@ -1,6 +1,11 @@
 import { useState } from "react";
-import { BarChart3, User, Calendar, MessageSquare,
-  Wallet } from "lucide-react";
+import {
+  BarChart3,
+  User,
+  Calendar,
+  SlidersHorizontal,
+  Wallet,
+} from "lucide-react";
 import type { ActiveView } from "../DashboardLayout";
 
 type MobileTab = ActiveView | "avisos" | "perfil";
@@ -99,25 +104,25 @@ function MobileMenu({ activeView, onNavigate }: Props) {
 
       {/* Mensajes */}
       <button
-        onClick={() => handleTab("mensajes", "mensajes")}
+        onClick={() => handleTab("disponibilidad", "disponibilidad")}
         className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
       >
         <div
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("mensajes") ? "bg-primary/10" : ""}`}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("disponibilidad") ? "bg-primary/10" : ""}`}
         >
-          <MessageSquare
+          <SlidersHorizontal
             size={22}
-            strokeWidth={isActive("mensajes") ? 2.5 : 1.8}
+            strokeWidth={isActive("disponibilidad") ? 2.5 : 1.8}
             className={
-              isActive("mensajes")
+              isActive("disponibilidad")
                 ? "text-primary"
                 : "text-base-content opacity-40"
             }
           />
           <span
-            className={`text-[10px] font-medium ${isActive("mensajes") ? "text-primary" : "text-base-content opacity-40"}`}
+            className={`text-[10px] font-medium ${isActive("disponibilidad") ? "text-primary" : "text-base-content opacity-40"}`}
           >
-            Mensajes
+            Disponibilidad
           </span>
         </div>
       </button>

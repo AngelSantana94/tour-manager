@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SERVICE_ROLE_KEY")!
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
 // ─── ACCESS TOKEN ─────────────────────────────────────────────────────────────
@@ -11,22 +11,24 @@ async function getAccessToken(): Promise<string> {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id:     Deno.env.get("GOOGLE_CLIENT_ID")!,
+      client_id: Deno.env.get("GOOGLE_CLIENT_ID")!,
       client_secret: Deno.env.get("GOOGLE_CLIENT_SECRET")!,
       refresh_token: Deno.env.get("GOOGLE_REFRESH_TOKEN")!,
-      grant_type:    "refresh_token",
+      grant_type: "refresh_token",
     }),
   });
   const data = await res.json();
-  if (!data.access_token) throw new Error("No access token: " + JSON.stringify(data));
+  if (!data.access_token) {
+    throw new Error("No access token: " + JSON.stringify(data));
+  }
   return data.access_token;
 }
 
 // ─── FIX TILDES — decodifica base64 respetando UTF-8 ─────────────────────────
 function decodeBase64Utf8(b64: string): string {
   const normalized = b64.replace(/-/g, "+").replace(/_/g, "/");
-  const binaryStr  = atob(normalized);
-  const bytes      = Uint8Array.from(binaryStr, (c) => c.charCodeAt(0));
+  const binaryStr = atob(normalized);
+  const bytes = Uint8Array.from(binaryStr, (c) => c.charCodeAt(0));
   return new TextDecoder("utf-8").decode(bytes);
 }
 
@@ -58,7 +60,9 @@ function parseFreeTourHtml(html: string): string {
 
   // ── Formatos 2 y 3: modificaciones y cancelaciones ───────────────────────────
   // Solo el primer DIV con email-text — los <p class="email-text"> de después son avisos legales
-  const emailTextM = clean.match(/class="[^"]*email-text[^"]*"[^>]*>([\s\S]+?)<\/div>/i);
+  const emailTextM = clean.match(
+    /class="[^"]*email-text[^"]*"[^>]*>([\s\S]+?)<\/div>/i,
+  );
   if (emailTextM) {
     const block = emailTextM[1];
 
@@ -66,12 +70,14 @@ function parseFreeTourHtml(html: string): string {
     const pRe = /<p[^>]*?>([\s\S]{1,400}?)<\/p>/gi;
     while ((m = pRe.exec(block)) !== null) {
       const text = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      if (text.length > 2 && text.length < 300 &&
-          !text.includes("reject this booking") &&
-          !text.includes("please reject") &&
-          !text.includes("Reject this") &&
-          !text.includes("automatic notification") &&
-          !text.includes("verify customer cancellations")) {
+      if (
+        text.length > 2 && text.length < 300 &&
+        !text.includes("reject this booking") &&
+        !text.includes("please reject") &&
+        !text.includes("Reject this") &&
+        !text.includes("automatic notification") &&
+        !text.includes("verify customer cancellations")
+      ) {
         results.push(text);
       }
     }
@@ -86,21 +92,30 @@ function parseFreeTourHtml(html: string): string {
   if (results.length > 1) return results.join("\n");
 
   // Último fallback
-  return clean.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1500);
+  return clean.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(
+    0,
+    1500,
+  );
 }
 
 // ─── EXTRAER TEXTO del mensaje ────────────────────────────────────────────────
-function extractEmailText(msg: any): { subject: string; from: string; body: string } {
+function extractEmailText(
+  msg: any,
+): { subject: string; from: string; body: string } {
   const headers = msg.payload?.headers ?? [];
   const subject = headers.find((h: any) => h.name === "Subject")?.value ?? "";
-  const from    = headers.find((h: any) => h.name === "From")?.value ?? "";
+  const from = headers.find((h: any) => h.name === "From")?.value ?? "";
   const isFreeTour = from.toLowerCase().includes("freetour");
 
   function findRawHtml(parts: any[]): string {
     for (const part of parts) {
-      if (part.mimeType === "text/html" && part.body?.data)
+      if (part.mimeType === "text/html" && part.body?.data) {
         return decodeBase64Utf8(part.body.data);
-      if (part.parts) { const f = findRawHtml(part.parts); if (f) return f; }
+      }
+      if (part.parts) {
+        const f = findRawHtml(part.parts);
+        if (f) return f;
+      }
     }
     return "";
   }
@@ -109,9 +124,13 @@ function extractEmailText(msg: any): { subject: string; from: string; body: stri
     // Para FreeTour: saltamos el texto plano (suele estar vacío) y parseamos HTML
     if (!isFreeTour) {
       for (const part of parts) {
-        if (part.mimeType === "text/plain" && part.body?.data)
+        if (part.mimeType === "text/plain" && part.body?.data) {
           return decodeBase64Utf8(part.body.data);
-        if (part.parts) { const f = findText(part.parts); if (f) return f; }
+        }
+        if (part.parts) {
+          const f = findText(part.parts);
+          if (f) return f;
+        }
       }
     }
     // HTML fallback (o FreeTour directo)
@@ -121,7 +140,10 @@ function extractEmailText(msg: any): { subject: string; from: string; body: stri
         if (isFreeTour) return parseFreeTourHtml(html);
         return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
       }
-      if (part.parts) { const f = findText(part.parts); if (f) return f; }
+      if (part.parts) {
+        const f = findText(part.parts);
+        if (f) return f;
+      }
     }
     return "";
   }
@@ -139,11 +161,15 @@ function extractEmailText(msg: any): { subject: string; from: string; body: stri
 }
 
 // ─── GEMINI ───────────────────────────────────────────────────────────────────
-async function callGemini(email: { subject: string; from: string; body: string }): Promise<any> {
+async function callGemini(
+  email: { subject: string; from: string; body: string },
+): Promise<any> {
   const apiKey = Deno.env.get("GEMINI_API_KEY")!;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
 
-  const prompt = `Eres un asistente que analiza emails de reservas de free tours y extrae datos estructurados.
+  const prompt =
+    `Eres un asistente que analiza emails de reservas de free tours y extrae datos estructurados.
 Devuelve ÚNICAMENTE un objeto JSON válido, sin texto adicional, sin backticks, sin explicaciones.
 
 Estructura JSON obligatoria:
@@ -215,7 +241,7 @@ ${email.body.slice(0, 3000)}`;
   }
 
   const data = await res.json();
-  const text  = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
   const clean = text.replace(/```json|```/g, "").trim();
   return JSON.parse(clean);
 }
@@ -225,9 +251,9 @@ async function findOrCreateTour(data: any): Promise<string> {
   const { data: existing } = await supabase
     .from("tours")
     .select("id")
-    .eq("title",    data.tour_title)
-    .eq("date",     data.date)
-    .eq("time",     data.time)
+    .eq("title", data.tour_title)
+    .eq("date", data.date)
+    .eq("time", data.time)
     .eq("platform", data.platform ?? "other")
     .maybeSingle();
 
@@ -236,12 +262,12 @@ async function findOrCreateTour(data: any): Promise<string> {
   const { data: created, error } = await supabase
     .from("tours")
     .insert({
-      title:    data.tour_title,
-      date:     data.date,
-      time:     data.time,
+      title: data.tour_title,
+      date: data.date,
+      time: data.time,
       language: data.language ?? "es",
       platform: data.platform ?? "other",
-      source:   "auto",
+      source: "auto",
     })
     .select("id")
     .single();
@@ -252,17 +278,17 @@ async function findOrCreateTour(data: any): Promise<string> {
 
 // ─── GUARDAR RESERVA (con deduplicación por teléfono/booking_code + tour) ──────
 async function saveReservation(tourId: string, data: any, rawEmail: string) {
-  const adults       = Number(data.adults)   || 0;
-  const children     = Number(data.children) || 0;
-  const bookingCode  = data.booking_code ?? null;
-  const phone        = data.phone ?? "";
+  const adults = Number(data.adults) || 0;
+  const children = Number(data.children) || 0;
+  const bookingCode = data.booking_code ?? null;
+  const phone = data.phone ?? "";
 
   // Deduplicación: buscar por booking_code (Turixe) o por teléfono
   let existing = null;
   if (bookingCode) {
     const { data: found } = await supabase
       .from("reservations").select("id")
-      .eq("tour_id",     tourId)
+      .eq("tour_id", tourId)
       .eq("booking_code", bookingCode)
       .maybeSingle();
     existing = found;
@@ -271,7 +297,7 @@ async function saveReservation(tourId: string, data: any, rawEmail: string) {
     const { data: found } = await supabase
       .from("reservations").select("id")
       .eq("tour_id", tourId)
-      .eq("phone",   phone)
+      .eq("phone", phone)
       .maybeSingle();
     existing = found;
   }
@@ -285,15 +311,15 @@ async function saveReservation(tourId: string, data: any, rawEmail: string) {
   }
 
   const { error } = await supabase.from("reservations").insert({
-    tour_id:      tourId,
+    tour_id: tourId,
     contact_name: data.contact_name ?? "",
     phone,
     adults,
     children,
-    pax:          adults + children,
-    platform:     data.platform     ?? "other",
+    pax: adults + children,
+    platform: data.platform ?? "other",
     booking_code: bookingCode,
-    raw_email:    rawEmail,
+    raw_email: rawEmail,
   });
 
   if (error) throw new Error(`Error guardando reserva: ${error.message}`);
@@ -302,12 +328,19 @@ async function saveReservation(tourId: string, data: any, rawEmail: string) {
   const { data: tour } = await supabase
     .from("tours").select("date, time").eq("id", tourId).maybeSingle();
   if (tour) {
-    const fecha    = new Date(tour.date).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" });
-    const plat     = (data.platform ?? "other").charAt(0).toUpperCase() + (data.platform ?? "other").slice(1);
+    const fecha = new Date(tour.date).toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    });
+    const plat = (data.platform ?? "other").charAt(0).toUpperCase() +
+      (data.platform ?? "other").slice(1);
     const paxTotal = adults + children;
     await supabase.from("notifications").insert({
-      type:    "reservation",
-      message: `Nueva reserva [${plat}] · ${data.contact_name ?? "cliente"} · ${paxTotal} pax · ${fecha} ${tour.time?.slice(0, 5)}`,
+      type: "reservation",
+      message: `Nueva reserva [${plat}] · ${
+        data.contact_name ?? "cliente"
+      } · ${paxTotal} pax · ${fecha} ${tour.time?.slice(0, 5)}`,
       tour_id: tourId,
     });
   }
@@ -331,7 +364,7 @@ async function handleCancellation(data: any): Promise<void> {
   if (!reservation && data.phone) {
     const { data: tours } = await supabase
       .from("tours").select("id")
-      .eq("date",     data.date)
+      .eq("date", data.date)
       .eq("platform", data.platform ?? "other");
 
     if (tours && tours.length > 0) {
@@ -339,14 +372,19 @@ async function handleCancellation(data: any): Promise<void> {
       const { data: found } = await supabase
         .from("reservations").select("id, tour_id")
         .in("tour_id", tourIds)
-        .eq("phone",   data.phone)
+        .eq("phone", data.phone)
         .maybeSingle();
       reservation = found;
     }
   }
 
   if (!reservation) {
-    console.log("Reserva no encontrada para cancelación — código:", data.booking_code, "tel:", data.phone);
+    console.log(
+      "Reserva no encontrada para cancelación — código:",
+      data.booking_code,
+      "tel:",
+      data.phone,
+    );
     return;
   }
 
@@ -354,13 +392,21 @@ async function handleCancellation(data: any): Promise<void> {
 
   // Notificación de cancelación — ANTES de borrar por si el tour desaparece
   const { data: tourInfo } = await supabase
-    .from("tours").select("date, time, platform").eq("id", tourId).maybeSingle();
+    .from("tours").select("date, time, platform").eq("id", tourId)
+    .maybeSingle();
   if (tourInfo) {
-    const fecha = new Date(tourInfo.date).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" });
-    const plat  = (tourInfo.platform ?? "other").charAt(0).toUpperCase() + (tourInfo.platform ?? "other").slice(1);
+    const fecha = new Date(tourInfo.date).toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    });
+    const plat = (tourInfo.platform ?? "other").charAt(0).toUpperCase() +
+      (tourInfo.platform ?? "other").slice(1);
     await supabase.from("notifications").insert({
-      type:    "cancellation",
-      message: `Cancelación [${plat}] · ${data.contact_name ?? "cliente"} · ${fecha} ${tourInfo.time?.slice(0, 5)}`,
+      type: "cancellation",
+      message: `Cancelación [${plat}] · ${
+        data.contact_name ?? "cliente"
+      } · ${fecha} ${tourInfo.time?.slice(0, 5)}`,
       tour_id: tourId,
     });
   }
@@ -389,7 +435,7 @@ async function handleCancellation(data: any): Promise<void> {
 async function handleModification(data: any, rawEmail: string): Promise<void> {
   console.log("Modificación detectada para:", data.contact_name);
 
-  const originalDate        = data.original_date        ?? data.date;
+  const originalDate = data.original_date ?? data.date;
   const originalBookingCode = data.original_booking_code ?? null;
 
   let originalReservation = null;
@@ -407,7 +453,7 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
   if (!originalReservation && data.phone) {
     const { data: originalTours } = await supabase
       .from("tours").select("id")
-      .eq("date",     originalDate)
+      .eq("date", originalDate)
       .eq("platform", data.platform ?? "other");
 
     if (originalTours && originalTours.length > 0) {
@@ -415,7 +461,7 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
       const { data: found } = await supabase
         .from("reservations").select("id, tour_id")
         .in("tour_id", tourIds)
-        .eq("phone",   data.phone)
+        .eq("phone", data.phone)
         .maybeSingle();
       originalReservation = found;
     }
@@ -424,7 +470,10 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
   let oldTourId = null;
   if (originalReservation) {
     oldTourId = originalReservation.tour_id;
-    await supabase.from("reservations").delete().eq("id", originalReservation.id);
+    await supabase.from("reservations").delete().eq(
+      "id",
+      originalReservation.id,
+    );
     console.log("Reserva original eliminada");
   } else {
     console.log("Reserva original no encontrada — solo se creará la nueva");
@@ -437,18 +486,28 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
 
   // Notificación de modificación — con detalle de qué cambió
   const { data: tourInfo } = await supabase
-    .from("tours").select("date, time, platform").eq("id", newTourId).maybeSingle();
+    .from("tours").select("date, time, platform").eq("id", newTourId)
+    .maybeSingle();
   if (tourInfo) {
-    const fecha = new Date(tourInfo.date).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" });
-    const plat  = (data.platform ?? "other").charAt(0).toUpperCase() + (data.platform ?? "other").slice(1);
+    const fecha = new Date(tourInfo.date).toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    });
+    const plat = (data.platform ?? "other").charAt(0).toUpperCase() +
+      (data.platform ?? "other").slice(1);
 
     // Detectar qué cambió
     const parts: string[] = [];
-    const newPax      = (Number(data.adults) || 0) + (Number(data.children) || 0);
-    const originalPax = (Number(data.original_adults) || 0) + (Number(data.original_children) || 0);
+    const newPax = (Number(data.adults) || 0) + (Number(data.children) || 0);
+    const originalPax = (Number(data.original_adults) || 0) +
+      (Number(data.original_children) || 0);
 
     if (data.original_date && data.original_date !== data.date) {
-      const fechaOrig = new Date(data.original_date).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" });
+      const fechaOrig = new Date(data.original_date).toLocaleDateString(
+        "es-ES",
+        { day: "2-digit", month: "2-digit" },
+      );
       parts.push(`fecha ${fechaOrig} → ${fecha}`);
     }
     if (data.original_time && data.original_time !== data.time) {
@@ -458,11 +517,15 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
       parts.push(`pax ${originalPax} → ${newPax}`);
     }
 
-    const detalle = parts.length > 0 ? parts.join(", ") : `${fecha} ${tourInfo.time?.slice(0, 5)}`;
+    const detalle = parts.length > 0
+      ? parts.join(", ")
+      : `${fecha} ${tourInfo.time?.slice(0, 5)}`;
 
     await supabase.from("notifications").insert({
-      type:    "modification",
-      message: `Modificación [${plat}] · ${data.contact_name ?? "cliente"} · ${detalle}`,
+      type: "modification",
+      message: `Modificación [${plat}] · ${
+        data.contact_name ?? "cliente"
+      } · ${detalle}`,
       tour_id: newTourId,
     });
   }
@@ -487,7 +550,9 @@ async function handleModification(data: any, rawEmail: string): Promise<void> {
 }
 
 // ─── LEER EMAILS NUEVOS (vía historial Gmail) ─────────────────────────────────
-async function getNewEmails(accessToken: string): Promise<{ subject: string; from: string; body: string }[]> {
+async function getNewEmails(
+  accessToken: string,
+): Promise<{ subject: string; from: string; body: string }[]> {
   const { data: state } = await supabase
     .from("gmail_state")
     .select("history_id")
@@ -502,7 +567,7 @@ async function getNewEmails(accessToken: string): Promise<{ subject: string; fro
 
   const histRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${startHistoryId}&historyTypes=messageAdded`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
+    { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const histData = await histRes.json();
 
@@ -526,9 +591,9 @@ async function getNewEmails(accessToken: string): Promise<{ subject: string; fro
   for (const msgId of messageIds) {
     const msgRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { headers: { Authorization: `Bearer ${accessToken}` } },
     );
-    const msg   = await msgRes.json();
+    const msg = await msgRes.json();
     const email = extractEmailText(msg);
     if (email.body) texts.push(email);
   }
@@ -554,12 +619,15 @@ Deno.serve(async (req) => {
       .from("gmail_state").select("id").eq("id", 1).maybeSingle();
 
     if (!existing) {
-      await supabase.from("gmail_state").insert({ id: 1, history_id: historyId });
+      await supabase.from("gmail_state").insert({
+        id: 1,
+        history_id: historyId,
+      });
       console.log("Primer historyId guardado:", historyId);
     }
 
     const accessToken = await getAccessToken();
-    const emails      = await getNewEmails(accessToken);
+    const emails = await getNewEmails(accessToken);
 
     if (emails.length === 0) {
       console.log("Sin emails nuevos");
@@ -602,9 +670,10 @@ Deno.serve(async (req) => {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-
   } catch (err) {
     console.error("Error:", err.message);
-    return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false, error: err.message }), {
+      status: 200,
+    });
   }
 });

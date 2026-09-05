@@ -2,33 +2,33 @@ import { ChevronLeft, ChevronRight, Plus, ChevronDown } from "lucide-react";
 import type { CalendarView } from "./CalendarView";
 
 interface CalendarHeaderProps {
-  headerLabel:  string;
-  view:         CalendarView;
+  headerLabel: string;
+  view: CalendarView;
   onViewChange: (v: CalendarView) => void;
-  onPrev:       () => void;
-  onNext:       () => void;
-  onToday:      () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToday: () => void;
   onCreateEvent: () => void;
-  onRefetch?:   () => void;
+  onRefetch?: () => void;
 
-  platforms:        string[];
-  tours:            string[];
-  guides:           string[];
-  selectedPlatform: string;
-  selectedTour:     string;
-  selectedGuide:    string;
-  onPlatformChange: (v: string) => void;
-  onTourChange:     (v: string) => void;
-  onGuideChange:    (v: string) => void;
+  // "" = todas, "external" = plataformas externas (OTA), "tgb" = Tu Guía en Brujas
+  selectedSource: string;
+  onSourceChange: (v: string) => void;
+
+  // Muestra también horarios TGB sin reservas (por defecto solo se ven los
+  // que tienen alguna reserva confirmada)
+  showEmptyTgb: boolean;
+  onShowEmptyTgbChange: (v: boolean) => void;
+
+  guides: string[];
+  selectedGuide: string;
+  onGuideChange: (v: string) => void;
 }
 
-const PLATFORM_LABELS: Record<string, string> = {
-  guruwalk:    "GuruWalk",
-  freetour:    "FreeTour",
-  turixe:      "Turixe",
-  tripadvisor: "TripAdvisor",
-  manual:      "Manual",
-  other:       "Otras",
+const SOURCE_LABELS: Record<string, string> = {
+  "": "Todas",
+  external: "Plataformas externas",
+  tgb: "Tu Guía en Brujas",
 };
 
 export default function CalendarHeader({
@@ -39,22 +39,18 @@ export default function CalendarHeader({
   onNext,
   onToday,
   onCreateEvent,
-  platforms,
-  tours,
+  selectedSource,
+  onSourceChange,
+  showEmptyTgb,
+  onShowEmptyTgbChange,
   guides,
-  selectedPlatform,
-  selectedTour,
   selectedGuide,
-  onPlatformChange,
-  onTourChange,
   onGuideChange,
 }: CalendarHeaderProps) {
   return (
     <div className="w-full px-4 py-3 bg-base-100 border-b border-base-content/10 flex items-center justify-between gap-4 flex-wrap">
-
       {/* ── IZQUIERDA: fecha + navegación ── */}
       <div className="flex items-center gap-3">
-
         <button
           onClick={onPrev}
           className="btn btn-outline btn-sm btn-square border-base-content/20"
@@ -111,7 +107,6 @@ export default function CalendarHeader({
 
       {/* ── DERECHA: acciones y filtros ── */}
       <div className="flex items-center gap-3 flex-wrap">
-
         {/* Crear evento — negro empresarial */}
         <button
           onClick={onCreateEvent}
@@ -121,37 +116,38 @@ export default function CalendarHeader({
           Crear evento
         </button>
 
-        {/* Plataforma */}
+        {/* Fuente: todas / externas / Tu Guía en Brujas */}
         <div className="relative flex items-center gap-1.5 px-3 py-1.5 border border-base-content/20 rounded-lg bg-base-100 hover:bg-base-200 transition-colors select-none">
-          <span className="text-sm opacity-50">Plataforma:</span>
+          <span className="text-sm opacity-50">Fuente:</span>
           <select
-            value={selectedPlatform}
-            onChange={(e) => onPlatformChange(e.target.value)}
+            value={selectedSource}
+            onChange={(e) => onSourceChange(e.target.value)}
             className="text-sm font-bold bg-transparent outline-none cursor-pointer appearance-none pr-4 text-base-content"
           >
-            <option value="">Todas</option>
-            {platforms.map((p) => (
-              <option key={p} value={p}>{PLATFORM_LABELS[p] ?? p}</option>
+            {Object.entries(SOURCE_LABELS).map(([value, label]) => (
+              <option key={value || "all"} value={value}>
+                {label}
+              </option>
             ))}
           </select>
-          <ChevronDown size={13} className="absolute right-2 opacity-40 pointer-events-none" />
+          <ChevronDown
+            size={13}
+            className="absolute right-2 opacity-40 pointer-events-none"
+          />
         </div>
 
-        {/* Tour */}
-        <div className="relative flex items-center gap-1.5 px-3 py-1.5 border border-base-content/20 rounded-lg bg-base-100 hover:bg-base-200 transition-colors select-none">
-          <span className="text-sm opacity-50">Tour:</span>
-          <select
-            value={selectedTour}
-            onChange={(e) => onTourChange(e.target.value)}
-            className="text-sm font-bold bg-transparent outline-none cursor-pointer appearance-none pr-4 text-base-content"
-          >
-            <option value="">Todos</option>
-            {tours.map((t) => (
-              <option key={t} value={t}>{t.length > 28 ? t.slice(0, 28) + "…" : t}</option>
-            ))}
-          </select>
-          <ChevronDown size={13} className="absolute right-2 opacity-40 pointer-events-none" />
-        </div>
+        {/* Toggle: mostrar horarios TGB sin reservas */}
+        <label className="flex items-center gap-2 px-3 py-1.5 border border-base-content/20 rounded-lg bg-base-100 hover:bg-base-200 transition-colors cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showEmptyTgb}
+            onChange={(e) => onShowEmptyTgbChange(e.target.checked)}
+            className="toggle toggle-sm"
+          />
+          <span className="text-sm font-semibold">
+            Mostrar horarios sin reservas
+          </span>
+        </label>
 
         {/* Guía — se mostrará cuando haya datos */}
         {guides.length > 0 && (
@@ -164,13 +160,17 @@ export default function CalendarHeader({
             >
               <option value="">Todos</option>
               {guides.map((g) => (
-                <option key={g} value={g}>{g}</option>
+                <option key={g} value={g}>
+                  {g}
+                </option>
               ))}
             </select>
-            <ChevronDown size={13} className="absolute right-2 opacity-40 pointer-events-none" />
+            <ChevronDown
+              size={13}
+              className="absolute right-2 opacity-40 pointer-events-none"
+            />
           </div>
         )}
-
       </div>
     </div>
   );

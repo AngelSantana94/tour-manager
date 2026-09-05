@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import BoardMonth from "./BoardMonth";
 import BoardWeek from "./BoardWeek";
 import BoardDay from "./BoardDay";
@@ -6,13 +6,16 @@ import CalendarHeader from "./CalendarHeader";
 import MobileHeader from "./MobileHeader";
 import CreateEventModal from "./CreateEventModal";
 import EventPage from "./Events/EventPage";
-import { useSupabaseEvents } from "./Services/UseSupabaseEvents";
+import { useSupabaseOTAEvents } from "./Services/UseSupabaseOTAEvents";
+import { useSupabaseTGBEvents } from "./Services/UseSupabaseTGBEvents";
 import type { CalendarEvent } from "./CreateEventModal";
 
 export type CalendarView = "week" | "day";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-function pad(n: number) { return String(n).padStart(2, "0"); }
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
 
 function getTodayStr(): string {
   const now = new Date();
@@ -26,15 +29,30 @@ function shiftDate(dateStr: string, days: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+// Misma clave de agrupación que en BoardWeek.tsx (mantener sincronizadas):
+// OTA combina todas las plataformas del mismo tour físico; TGB se separa por
+// tourId para no mezclar reservas de tours distintos que caen en el mismo
+// horario (p. ej. "Free tour" y "Brujas completo" ambos a las 10:45).
+function eventGroupKey(event: CalendarEvent): string {
+  if (event.meta?.source === "tgb") {
+    return `tgb:${(event.meta?.tourId as string) ?? (event.meta?.scheduleId as string) ?? event.id}`;
+  }
+  return "ota";
+}
+
 function formatHeaderLabel(dateStr: string, view: CalendarView): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const date = new Date(y, m - 1, d);
 
   if (view === "day") {
-    return date.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
+    return date.toLocaleDateString("es-ES", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
   }
 
-  const dow    = date.getDay();
+  const dow = date.getDay();
   const monday = new Date(date);
   monday.setDate(date.getDate() - ((dow + 6) % 7));
   const sunday = new Date(monday);
@@ -49,49 +67,81 @@ function formatHeaderLabel(dateStr: string, view: CalendarView): string {
 // ─── COMPONENTE ──────────────────────────────────────────────────────────────
 function CalendarView() {
   const today = getTodayStr();
-  const [selectedDate,  setSelectedDate]  = useState<string>(today);
-  const [view,          setView]          = useState<CalendarView>("week");
-  const [modalOpen,     setModalOpen]     = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>(today);
+  const [view, setView] = useState<CalendarView>("week");
+  const [modalOpen, setModalOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   // ── Filtros ──────────────────────────────────────────────────────────────
-  const [selectedPlatform, setSelectedPlatform] = useState("");
-  const [selectedTour,     setSelectedTour]     = useState("");
-  const [selectedGuide,    setSelectedGuide]    = useState("");
+  // "" = todas, "external" = plataformas externas (OTA), "tgb" = Tu Guía en Brujas
+  const [selectedSource, setSelectedSource] = useState("");
+  const [selectedGuide, setSelectedGuide] = useState("");
+  // Por defecto solo se ven horarios TGB con reservas confirmadas; con esto
+  // activado también aparecen los que están en 0. El control visual de este
+  // toggle vive únicamente en MobileHeader (solo se ve en móvil), pero se
+  // aplica tanto a BoardWeek (desktop) como a BoardDay (móvil y desktop).
+  const [showEmptyTgb, setShowEmptyTgb] = useState(false);
 
-  const { events, loading, error, refetch, addEvent, removeEvent, addReservation, removeReservation } = useSupabaseEvents();
+  // ── Fuentes de datos: OTA (solo lectura + CRUD de tours/reservas OTA) y
+  // TGB (lectura + CRUD acotado a schedule_exceptions) ──────────────────────
+  const ota = useSupabaseOTAEvents();
+  const tgb = useSupabaseTGBEvents();
+
+  const events = useMemo(
+    () => [...ota.events, ...tgb.events],
+    [ota.events, tgb.events],
+  );
+  const loading = ota.loading || tgb.loading;
+  const error = ota.error ?? tgb.error;
+
+  function refetch() {
+    ota.refetch();
+    tgb.refetch();
+  }
+
+  const { addEvent, removeEvent, addReservation, removeReservation } = ota;
+
+  // Acciones TGB (aforo/cierre de un día concreto) — se conectarán a los
+  // botones "Capacidad" / "Bloquear" de TuGuiaEventBody en el próximo paso
+  const {
+    upsertException: upsertTgbException,
+    clearException: clearTgbException,
+  } = tgb;
 
   // ── Listas únicas para los filtros ───────────────────────────────────────
-  const platforms = useMemo(() =>
-    Array.from(new Set(events.map((e) => (e.meta?.platform as string) ?? "other").filter(Boolean))).sort(),
-    [events]
-  );
-
-  const tourTitles = useMemo(() =>
-    Array.from(new Set(events.map((e) => e.tour).filter(Boolean))).sort(),
-    [events]
-  );
-
   // Guías — de momento vacío hasta que se añadan en el futuro
-  const guides: string[] = useMemo(() =>
-    Array.from(new Set(events.map((e) => (e.meta?.guide as string) ?? "").filter(Boolean))).sort(),
-    [events]
+  const guides: string[] = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          events.map((e) => (e.meta?.guide as string) ?? "").filter(Boolean),
+        ),
+      ).sort(),
+    [events],
   );
 
   // ── Eventos filtrados ─────────────────────────────────────────────────────
   const filteredEvents = useMemo(() => {
     return events.filter((e) => {
-      if (selectedPlatform && (e.meta?.platform as string) !== selectedPlatform) return false;
-      if (selectedTour     && e.tour !== selectedTour) return false;
-      if (selectedGuide    && (e.meta?.guide as string) !== selectedGuide) return false;
+      const isTgb = (e.meta?.source as string) === "tgb";
+      if (selectedSource === "tgb" && !isTgb) return false;
+      if (selectedSource === "external" && isTgb) return false;
+      if (selectedGuide && (e.meta?.guide as string) !== selectedGuide)
+        return false;
       return true;
     });
-  }, [events, selectedPlatform, selectedTour, selectedGuide]);
+  }, [events, selectedSource, selectedGuide]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
-  function handlePrev()  { setSelectedDate((d) => shiftDate(d, view === "week" ? -7 : -1)); }
-  function handleNext()  { setSelectedDate((d) => shiftDate(d, view === "week" ?  7 :  1)); }
-  function handleToday() { setSelectedDate(today); }
+  function handlePrev() {
+    setSelectedDate((d) => shiftDate(d, view === "week" ? -7 : -1));
+  }
+  function handleNext() {
+    setSelectedDate((d) => shiftDate(d, view === "week" ? 7 : 1));
+  }
+  function handleToday() {
+    setSelectedDate(today);
+  }
 
   function handleSelectDate(date: string) {
     setSelectedDate(date);
@@ -103,17 +153,26 @@ function CalendarView() {
     setSelectedEventId(null);
   }
 
-  const eventsByDate = filteredEvents.reduce<Record<string, CalendarEvent[]>>((acc, e) => {
-    if (!acc[e.date]) acc[e.date] = [];
-    acc[e.date].push(e);
-    return acc;
-  }, {});
+  const eventsByDate = filteredEvents.reduce<Record<string, CalendarEvent[]>>(
+    (acc, e) => {
+      if (!acc[e.date]) acc[e.date] = [];
+      acc[e.date].push(e);
+      return acc;
+    },
+    {},
+  );
 
   const selectedEvent = events.find((e) => e.id === selectedEventId) ?? null;
 
-  // Todos los eventos de la misma hora y fecha que el seleccionado
+  // Todos los eventos de la misma hora y fecha que el seleccionado (y del
+  // mismo tour, si es TGB — ver eventGroupKey)
   const selectedEventGroup = selectedEvent
-    ? events.filter((e) => e.date === selectedEvent.date && e.time === selectedEvent.time)
+    ? events.filter(
+        (e) =>
+          e.date === selectedEvent.date &&
+          e.time === selectedEvent.time &&
+          eventGroupKey(e) === eventGroupKey(selectedEvent),
+      )
     : [];
 
   // ── Vista de evento ──
@@ -126,7 +185,9 @@ function CalendarView() {
         onDelete={handleDeleteEvent}
         onAddReservation={addReservation}
         onRemoveReservation={removeReservation}
-        onRefetch={() => refetch()}
+        onRefetch={refetch}
+        onUpsertTgbException={upsertTgbException}
+        onClearTgbException={clearTgbException}
       />
     );
   }
@@ -134,7 +195,6 @@ function CalendarView() {
   // ── Vista de calendario ──
   return (
     <div className="flex flex-col h-full w-full bg-base-100">
-
       {/* HEADER DESKTOP */}
       <header className="hidden md:block flex-none">
         <CalendarHeader
@@ -146,14 +206,12 @@ function CalendarView() {
           onToday={handleToday}
           onCreateEvent={() => setModalOpen(true)}
           onRefetch={refetch}
-          platforms={platforms}
-          tours={tourTitles}
+          selectedSource={selectedSource}
+          onSourceChange={setSelectedSource}
+          showEmptyTgb={showEmptyTgb}
+          onShowEmptyTgbChange={setShowEmptyTgb}
           guides={guides}
-          selectedPlatform={selectedPlatform}
-          selectedTour={selectedTour}
           selectedGuide={selectedGuide}
-          onPlatformChange={setSelectedPlatform}
-          onTourChange={setSelectedTour}
           onGuideChange={setSelectedGuide}
         />
       </header>
@@ -173,30 +231,26 @@ function CalendarView() {
       {error && (
         <div className="flex items-center justify-between px-4 py-2 bg-error/10 border-b border-error/20 text-sm text-error flex-none">
           <span>Error cargando eventos: {error}</span>
-          <button onClick={refetch} className="btn btn-xs btn-ghost text-error">Reintentar</button>
+          <button onClick={refetch} className="btn btn-xs btn-ghost text-error">
+            Reintentar
+          </button>
         </div>
       )}
 
       {/* CUERPO */}
       <div className="flex flex-1 overflow-hidden">
-
-        {/* Lateral — solo desktop */}
-        <aside className="hidden md:flex md:flex-col w-1/5 min-w-[200px] max-w-[260px] border-r border-base-content/5 overflow-y-auto bg-base-100/50">
+        {/* Lateral — Ancho fijo ajustado para calendario cuadrado y cero espacio muerto */}
+        <aside className="hidden md:flex md:flex-col w-[270px] shrink-0 border-r border-base-content/10 overflow-y-auto bg-base-100/50 p-2 gap-3">
           <BoardMonth
             selectedDate={selectedDate}
             onSelectDate={handleSelectDate}
             eventsByDate={eventsByDate}
           />
-          <div className="p-4 border-t border-base-content/5">
-            <h4 className="text-xs font-bold opacity-40 uppercase mb-4 tracking-widest">
-              Guías Activos
-            </h4>
-          </div>
+          
         </aside>
 
-        {/* Main */}
+        {/* Main — Relleno reducido de p-4 a p-2 para ganar máximo espacio de lectura */}
         <main className="flex-1 overflow-hidden relative">
-
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/70 backdrop-blur-sm">
               <div className="flex flex-col items-center gap-3">
@@ -211,17 +265,25 @@ function CalendarView() {
             <BoardDay
               selectedDate={selectedDate}
               events={filteredEvents}
+              showEmptyTgb={showEmptyTgb}
+              onShowEmptyTgbChange={setShowEmptyTgb}
               onCreateEvent={() => setModalOpen(true)}
               onSelectEvent={setSelectedEventId}
             />
           </div>
 
-          {/* DESKTOP — BoardWeek */}
-          <div className={["hidden h-full overflow-hidden p-4", view === "week" ? "md:block" : ""].join(" ")}>
-            <div className="h-full bg-base-100 border border-base-content/10 rounded-2xl shadow-sm overflow-hidden">
+          {/* DESKTOP — BoardWeek (p-2 y border-base-content/10 para pegarlo más) */}
+          <div
+            className={[
+              "hidden h-full overflow-hidden p-2",
+              view === "week" ? "md:block" : "",
+            ].join(" ")}
+          >
+            <div className="h-full bg-base-100 border border-base-content/10 rounded-xl shadow-xs overflow-hidden">
               <BoardWeek
                 selectedDate={selectedDate}
                 events={filteredEvents}
+                showEmptyTgb={showEmptyTgb}
                 onCreateEvent={() => setModalOpen(true)}
                 onSelectEvent={setSelectedEventId}
               />
@@ -229,21 +291,27 @@ function CalendarView() {
           </div>
 
           {/* DESKTOP — BoardDay */}
-          <div className={["hidden h-full overflow-hidden p-4", view === "day" ? "md:block" : ""].join(" ")}>
-            <div className="h-full bg-base-100 border border-base-content/10 rounded-2xl shadow-sm overflow-hidden">
+          <div
+            className={[
+              "hidden h-full overflow-hidden p-2",
+              view === "day" ? "md:block" : "",
+            ].join(" ")}
+          >
+            <div className="h-full bg-base-100 border border-base-content/10 rounded-xl shadow-xs overflow-hidden">
               <BoardDay
                 selectedDate={selectedDate}
                 events={filteredEvents}
+                showEmptyTgb={showEmptyTgb}
+                onShowEmptyTgbChange={setShowEmptyTgb}
                 onCreateEvent={() => setModalOpen(true)}
                 onSelectEvent={setSelectedEventId}
               />
             </div>
           </div>
-
         </main>
       </div>
 
-      {/* MODAL crear evento */}
+      {/* MODAL crear evento (solo OTA) */}
       {modalOpen && (
         <CreateEventModal
           initialDate={selectedDate}

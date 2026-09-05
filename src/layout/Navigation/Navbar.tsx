@@ -1,10 +1,7 @@
 import NotificationBell from "../../Notifications/NotificationBell";
 import ProfileMenu from "./ProfilMenu";
 
-
 function Navbar() {
-  
-
   return (
     <>
       {/* ── DESKTOP — sin cambios ── */}
@@ -15,8 +12,8 @@ function Navbar() {
             <span className="text-primary">Tour</span>
             <span className="text-base-content">Manager</span>
           </span>
-          <span className="text-[9px] opacity-30 font-bold uppercase tracking-widest mt-0.5">
-            Brujas Edition
+          <span className="text-[9px]  font-bold  tracking-widest mt-0.5">
+            Panel de gestión para guías
           </span>
         </div>
 
@@ -30,7 +27,7 @@ function Navbar() {
       </nav>
 
       {/* ── MÓVIL — solo campana y perfil ── */}
-      <header className="lg:hidden flex w-full h-14 shrink-0 bg-base-100 border-b border-base-content/5 items-center justify-between px-4 relative z-50">
+      <header className="lg:hidden sticky top-0 flex w-full h-14 shrink-0 bg-base-100 border-b border-base-content/5 items-center justify-between px-4 z-50">
         <span className="text-base font-black tracking-tight">
           <span className="text-primary">Tour</span>
           <span className="text-base-content">Manager</span>

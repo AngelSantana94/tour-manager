@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  BarChart3, Users, Calendar, MessageSquare,
+  BarChart3, Users, Calendar, SlidersHorizontal,
   Wallet, Sun, Moon, Monitor, PanelLeftOpen, PanelLeftClose,
 } from "lucide-react";
 import type { ActiveView } from "../DashboardLayout";
@@ -30,7 +30,7 @@ function Sidebar({ activeView, onNavigate }: Props) {
     { name: "Métricas",    view: "metricas"    as ActiveView, icon: BarChart3     },
     { name: "Guías",       view: "guias"       as ActiveView, icon: Users         },
     { name: "Calendario",  view: "calendario"  as ActiveView, icon: Calendar      },
-    { name: "Mensajes",    view: "mensajes"    as ActiveView, icon: MessageSquare },
+    { name: "Disponibilidad",    view: "disponibilidad"    as ActiveView, icon: SlidersHorizontal },
     { name: "Facturación", view: "facturacion" as ActiveView, icon: Wallet        },
   ];
 
@@ -131,7 +131,7 @@ function Sidebar({ activeView, onNavigate }: Props) {
             <div className="mx-4 my-2 border-t border-base-content/10" />
 
             <div className="mt-6 pt-4 border-t border-secondary/5 text-[10px] opacity-30 text-center font-mono italic uppercase is-drawer-close:hidden">
-              v1.0.0 - tourmanager-IA
+              v2.0.0 - tourmanager-IA
             </div>
           </div>
         </ul>
