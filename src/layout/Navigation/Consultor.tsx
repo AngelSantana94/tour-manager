@@ -36,13 +36,6 @@ import {
 } from "../../Calendars/Services/SupabaseTGB.adapter";
 import type { Profile } from "../../login/AuthContext";
 
-// ─── API KEY — sale de variables de entorno, no hardcodeada ──────────────────
-// Vite SOLO expone al cliente las variables que empiezan por VITE_. En tu
-// .env debe estar como VITE_GEMINI_API_KEY=... (no GEMINI_API_KEY a secas),
-// y hay que reiniciar `npm run dev` tras cambiarlo — Vite solo lee el .env
-// al arrancar.
-const GEMINI_API_KEY = "AIzaSyC1b82VDM4Ztp9MUHpsEPEGpGZHIeeb-sc";
-const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 // Ventana de días TGB a incluir en el contexto (ajustable). Se mantiene
 // acotada a propósito para no disparar el tamaño del prompt.
@@ -271,20 +264,24 @@ async function callGemini(
   context: string,
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt(context);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const { data, error } = await supabaseOTA.functions.invoke("gemini-proxy", {
+    body: {
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents: history,
       generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-    }),
+    },
   });
 
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
-  const data = await res.json();
+  if (error) {
+    console.error("Error al llamar a gemini-proxy:", error);
+    throw new Error(`Gemini Proxy Error: ${error.message}`);
+  }
+
+  if (data?.error) {
+    throw new Error(`Gemini Error: ${data.error.message || JSON.stringify(data.error)}`);
+  }
+
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Sin respuesta";
 }
 
