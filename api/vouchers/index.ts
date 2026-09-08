@@ -65,7 +65,7 @@ async function generarPdf(
   // Construir rutas absolutas desde la raíz de Vercel (process.cwd())
   // OJO: Revisa que los nombres reales de tus archivos (.pdf y .ttf) coincidan en mayúsculas/minúsculas
   const templatePath = path.join(process.cwd(), "src/assets/voucher_template.pdf");
-  const fontPath = path.join(process.cwd(), "src/assets/font/Inter-Variable.ttf");
+  const fontPath = path.join(process.cwd(), "src/assets/fonts/Inter-Variable.ttf");
 
   // Lectura directa de archivos desde el disco del servidor
   const templateBytes = fs.readFileSync(templatePath);
