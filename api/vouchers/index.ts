@@ -25,6 +25,33 @@ function getSupabaseParaPeticion(
 
 const BUCKET = "vouchers";
 
+// URL directa del archivo estático de Caveat SemiBold (600), servido por el
+// propio repo oficial de Google Fonts. No requiere API key ni parseo de CSS.
+const GOOGLE_FONT_URL =
+  "https://raw.githubusercontent.com/google/fonts/main/ofl/caveat/static/Caveat-SemiBold.ttf";
+
+// Caché en memoria del proceso: mientras la función serverless siga "caliente"
+// (invocaciones consecutivas reutilizan el mismo contenedor), no se vuelve a
+// descargar la fuente. Si el contenedor se recicla, se descarga de nuevo.
+let cacheFontScriptBytes: Uint8Array | null = null;
+
+async function obtenerFontScript(pdfDoc: PDFDocument) {
+  try {
+    if (!cacheFontScriptBytes) {
+      const respuesta = await fetch(GOOGLE_FONT_URL);
+      if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
+      const buffer = await respuesta.arrayBuffer();
+      cacheFontScriptBytes = new Uint8Array(buffer);
+    }
+    return await pdfDoc.embedFont(cacheFontScriptBytes);
+  } catch (err) {
+    // Si Google Fonts no responde (red caída, bloqueo, etc.), no rompemos la
+    // generación del voucher: caemos de vuelta a Inter.
+    console.error("No se pudo descargar la fuente script:", err);
+    return null;
+  }
+}
+
 interface VoucherInput {
   empresa: string;
   nif: string;
@@ -70,18 +97,18 @@ async function generarPdf(
     "src/assets/fonts/Inter-Variable.ttf",
   );
 
-  // NOTA: si añades una fuente script/manuscrita (p.ej. "src/assets/fonts/Script-SemiBold.ttf")
-  // para el nombre del guía al pie, embébela aquí igual que con Inter y úsala solo
-  // en el draw() de "guiaEncargado" (punto 9 más abajo).
-  // const fontScriptBytes = fs.readFileSync(path.join(process.cwd(), "src/assets/fonts/Script-SemiBold.ttf"));
-  // const fontScript = await pdfDoc.embedFont(fontScriptBytes);
-
   const templateBytes = fs.readFileSync(templatePath);
   const pdfDoc = await PDFDocument.load(templateBytes);
   pdfDoc.registerFontkit(fontkit);
 
   const fontBytes = fs.readFileSync(fontPath);
   const font = await pdfDoc.embedFont(fontBytes);
+
+  // Fuente script para "Tu Guía en Brujas" (Caveat SemiBold), importada
+  // directamente desde Google Fonts en el momento — no hace falta descargarla
+  // ni subirla al repo. Se cachea en memoria para no volver a pedirla en cada
+  // invocación "caliente" de la función serverless.
+  const fontScript = await obtenerFontScript(pdfDoc);
 
   const page = pdfDoc.getPages()[0];
   const draw = (
@@ -90,7 +117,8 @@ async function generarPdf(
     y: number,
     size = 11,
     color = rgb(0.106, 0.165, 0.29),
-  ) => page.drawText(text, { x, y, size, font, color });
+    customFont = font,
+  ) => page.drawText(text, { x, y, size, font: customFont, color });
 
   const hoy = new Date().toLocaleDateString("es-ES", {
     day: "numeric",
@@ -108,8 +136,8 @@ async function generarPdf(
     : datos.importe.toFixed(2);
   const textoImporte = `${importeFormateado} €`;
 
-  // 1. Número de Voucher (Blanco, +10px más a la derecha respecto a la versión anterior: 606 -> 616)
-  draw(`No. ${numero}`, 616, 476, 16, rgb(1, 1, 1));
+  // 1. Número de Voucher (Blanco, -12px a la izquierda respecto a la versión anterior: 616 -> 604)
+  draw(`No. ${numero}`, 604, 476, 16, rgb(1, 1, 1));
 
   // 2. Fecha
   draw(hoy, 510, 396);
@@ -120,7 +148,8 @@ async function generarPdf(
 
   // 4. Dirección, C.P./Ciudad y NIF
   //    Alineados en línea recta exactamente con EXA TRAVEL (x=137)
-  draw(datos.direccion, 137, 395);
+  //    Dirección +2px arriba: 395 -> 397
+  draw(datos.direccion, 137, 397);
   draw(datos.cpCiudad, 137, 373);
   draw(textoNif, 137, 349);
 
@@ -130,20 +159,23 @@ async function generarPdf(
   // 6. Descripción/Concepto (+3px arriba, +3px derecha: 70,202 -> 73,205)
   draw(datos.concepto, 73, 205, 14);
 
-  // 7. Importes (+3px arriba, negrita suave con doble trazo)
-  draw(textoImporte, 511, 204, 13);
-  draw(textoImporte, 511.4, 204, 13);
-  draw(textoImporte, 511, 155, 13);
-  draw(textoImporte, 511.4, 155, 13);
+  // 7. Importes (+1px arriba: 204,155 -> 205,156; letra más grande 13 -> 14;
+  //    negrita más marcada con triple trazo, similar peso visual a "TOTAL")
+  [0, 0.4, 0.8].forEach((offset) => draw(textoImporte, 511 + offset, 205, 14));
+  [0, 0.4, 0.8].forEach((offset) => draw(textoImporte, 511 + offset, 156, 14));
 
-  // 8. Pax (+3px izquierda, +2px arriba, un poco más grande: 160,152,12 -> 157,154,13)
-  draw(textoPax, 157, 154, 13);
+  // 8. Pax (-3px izquierda, +2px arriba: 157,154 -> 154,156)
+  draw(textoPax, 154, 156, 13);
 
-  // 9. Guía Encargado / "Tu Guía en Brujas" (+10px más a la derecha: 203 -> 213)
-  //    Estilo manuscrito/semi-negrita suave pendiente de fuente script (ver nota arriba).
-  //    Mientras tanto se refuerza con doble trazo tenue para simular semi-negrita.
-  draw(datos.guiaEncargado, 213, 56, 14);
-  draw(datos.guiaEncargado, 213.3, 56, 14);
+  // 9. Guía Encargado / "Tu Guía en Brujas" (+10px más a la derecha: 213 -> 223)
+  //    Usa Caveat SemiBold importada de Google Fonts si la descarga funcionó;
+  //    si no, cae a Inter con doble trazo tenue simulando semi-negrita.
+  if (fontScript) {
+    draw(datos.guiaEncargado, 223, 56, 16, undefined, fontScript);
+  } else {
+    draw(datos.guiaEncargado, 223, 56, 14);
+    draw(datos.guiaEncargado, 223.3, 56, 14);
+  }
 
   return pdfDoc.save();
 }
