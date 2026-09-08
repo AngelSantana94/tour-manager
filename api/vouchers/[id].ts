@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "../../src/types/database.types";
+import type { Database } from "../../src/types/database.types.js";
 
 const BUCKET = "vouchers";
 
