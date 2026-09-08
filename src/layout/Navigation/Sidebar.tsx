@@ -1,7 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  BarChart3, Users, Calendar, SlidersHorizontal,
-  Wallet, Sun, Moon, Monitor, PanelLeftOpen, PanelLeftClose,
+  BarChart3,
+  Users,
+  Calendar,
+  SlidersHorizontal,
+  Wallet,
+  Receipt,
+  Ticket,
+  ChevronDown,
+  X,
+  Sun,
+  Moon,
+  Monitor,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from "lucide-react";
 import type { ActiveView } from "../DashboardLayout";
 
@@ -10,15 +22,64 @@ interface Props {
   onNavigate: (view: ActiveView) => void;
 }
 
+interface SubItem {
+  name: string;
+  view: ActiveView;
+  icon: React.ElementType;
+}
+
+interface MenuItem {
+  name: string;
+  icon: React.ElementType;
+  view?: ActiveView;
+  children?: SubItem[];
+}
+
+const menuItems: MenuItem[] = [
+  { name: "Métricas", view: "metricas", icon: BarChart3 },
+  { name: "Guías", view: "guias", icon: Users },
+  { name: "Calendario", view: "calendario", icon: Calendar },
+  { name: "Disponibilidad", view: "disponibilidad", icon: SlidersHorizontal },
+  {
+    name: "Facturación",
+    icon: Wallet,
+    children: [
+      { name: "Facturación", view: "facturacion", icon: Receipt },
+      { name: "Voucher", view: "voucher", icon: Ticket },
+    ],
+  },
+];
+
 function Sidebar({ activeView, onNavigate }: Props) {
-  const [isOpen,       setIsOpen]       = useState(true);
-  const [currentTheme, setCurrentTheme] = useState<"light" | "dark" | "system">("system");
+  const [isOpen, setIsOpen] = useState(true);
+  const [currentTheme, setCurrentTheme] = useState<"light" | "dark" | "system">(
+    "system",
+  );
+
+  // Acordeón del grupo Facturación (solo tiene sentido con la sidebar abierta)
+  const [facturacionExpanded, setFacturacionExpanded] = useState(
+    activeView === "facturacion" || activeView === "voucher",
+  );
+  // Si navegan a uno de los hijos por cualquier otra vía, que el acordeón
+  // se despliegue solo para reflejarlo.
+  useEffect(() => {
+    if (activeView === "facturacion" || activeView === "voucher") {
+      setFacturacionExpanded(true);
+    }
+  }, [activeView]);
+
+  // Modal de elección cuando la sidebar está colapsada y no hay sitio
+  // para desplegar el acordeón inline.
+  const [groupModal, setGroupModal] = useState<MenuItem | null>(null);
 
   const changeTheme = (theme: "light" | "dark" | "system") => {
     setCurrentTheme(theme);
     if (theme === "system") {
       const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
+      document.documentElement.setAttribute(
+        "data-theme",
+        isDark ? "dark" : "light",
+      );
       localStorage.removeItem("theme");
     } else {
       document.documentElement.setAttribute("data-theme", theme);
@@ -26,13 +87,13 @@ function Sidebar({ activeView, onNavigate }: Props) {
     }
   };
 
-  const menuItems = [
-    { name: "Métricas",    view: "metricas"    as ActiveView, icon: BarChart3     },
-    { name: "Guías",       view: "guias"       as ActiveView, icon: Users         },
-    { name: "Calendario",  view: "calendario"  as ActiveView, icon: Calendar      },
-    { name: "Disponibilidad",    view: "disponibilidad"    as ActiveView, icon: SlidersHorizontal },
-    { name: "Facturación", view: "facturacion" as ActiveView, icon: Wallet        },
-  ];
+  const handleGroupClick = (item: MenuItem) => {
+    if (!isOpen) {
+      setGroupModal(item);
+    } else {
+      setFacturacionExpanded((prev) => !prev);
+    }
+  };
 
   return (
     <div className="drawer-side is-drawer-close:overflow-visible">
@@ -53,23 +114,78 @@ function Sidebar({ activeView, onNavigate }: Props) {
             onClick={() => setIsOpen(!isOpen)}
             className="cursor-pointer hover:opacity-70 transition-opacity is-drawer-close:mx-auto"
           >
-            {isOpen
-              ? <PanelLeftOpen  size={20} className="flex items-center" />
-              : <PanelLeftClose size={20} className="flex items-center" />
-            }
+            {isOpen ? (
+              <PanelLeftOpen size={20} className="flex items-center" />
+            ) : (
+              <PanelLeftClose size={20} className="flex items-center" />
+            )}
           </div>
         </div>
       </label>
 
       <div className="flex min-h-full flex-col items-start bg-base-200 is-drawer-close:w-14 is-drawer-open:w-64">
         <ul className="menu w-full grow">
-
           {menuItems.map((item) => {
+            // ─── Item con submenú (Facturación) ───────────────────────
+            if (item.children) {
+              const isActive = item.children.some((c) => c.view === activeView);
+              return (
+                <li key={item.name}>
+                  <button
+                    onClick={() => handleGroupClick(item)}
+                    className={`flex items-center gap-4 py-4 px-2.5 rounded-xl transition-all w-full ${
+                      isActive
+                        ? "bg-primary/10 text-primary active"
+                        : "hover:bg-base-300"
+                    }`}
+                  >
+                    <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
+                    <span className="text-[15px] is-drawer-close:hidden flex-1 text-left">
+                      {item.name}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`is-drawer-close:hidden opacity-50 transition-transform ${
+                        facturacionExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {isOpen && facturacionExpanded && (
+                    <ul className="ml-4 mt-1 mb-1 flex flex-col gap-1 border-l border-base-content/10 pl-3">
+                      {item.children.map((sub) => {
+                        const subActive = activeView === sub.view;
+                        return (
+                          <li key={sub.name}>
+                            <button
+                              onClick={() => onNavigate(sub.view)}
+                              className={`flex items-center gap-3 py-2 px-2.5 rounded-lg text-sm w-full transition-all ${
+                                subActive
+                                  ? "bg-primary/10 text-primary font-semibold"
+                                  : "hover:bg-base-300 opacity-70"
+                              }`}
+                            >
+                              <sub.icon
+                                size={18}
+                                strokeWidth={subActive ? 2.5 : 2}
+                              />
+                              {sub.name}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </li>
+              );
+            }
+
+            // ─── Item simple (resto de secciones) ─────────────────────
             const isActive = activeView === item.view;
             return (
               <li key={item.name}>
                 <button
-                  onClick={() => onNavigate(item.view)}
+                  onClick={() => onNavigate(item.view!)}
                   className={`flex items-center gap-4 py-4 px-2.5 rounded-xl transition-all ${
                     isActive
                       ? "bg-primary/10 text-primary active"
@@ -77,7 +193,9 @@ function Sidebar({ activeView, onNavigate }: Props) {
                   }`}
                 >
                   <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
-                  <span className="text-[15px] is-drawer-close:hidden">{item.name}</span>
+                  <span className="text-[15px] is-drawer-close:hidden">
+                    {item.name}
+                  </span>
                 </button>
               </li>
             );
@@ -136,6 +254,42 @@ function Sidebar({ activeView, onNavigate }: Props) {
           </div>
         </ul>
       </div>
+
+      {/* Modal de elección cuando la sidebar está colapsada */}
+      {groupModal && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setGroupModal(null);
+          }}
+        >
+          <div className="bg-base-100 rounded-2xl shadow-xl w-full max-w-xs p-4 flex flex-col gap-1">
+            <div className="flex items-center justify-between mb-2 px-1">
+              <h3 className="text-sm font-bold">{groupModal.name}</h3>
+              <button
+                onClick={() => setGroupModal(null)}
+                className="opacity-40 hover:opacity-80"
+                aria-label="Cerrar"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            {groupModal.children!.map((sub) => (
+              <button
+                key={sub.name}
+                onClick={() => {
+                  onNavigate(sub.view);
+                  setGroupModal(null);
+                }}
+                className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-base-300 transition-all text-sm font-medium"
+              >
+                <sub.icon size={18} />
+                {sub.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

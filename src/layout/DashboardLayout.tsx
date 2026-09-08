@@ -8,8 +8,15 @@ import MetricsView  from "../Metrics/MetricsView";
 import GuideAvailabilityBase from "../Availability/GuideAvailabilityBase";
 import GuidesView   from "../guides/GuidesView";
 import BillingView  from "../Billing/BillingView";
+import Voucher      from "../Voucher/GenerarVoucher";
 
-export type ActiveView = "calendario" | "metricas" | "disponibilidad" | "guias" | "facturacion";
+export type ActiveView =
+  | "calendario"
+  | "metricas"
+  | "disponibilidad"
+  | "guias"
+  | "facturacion"
+  | "voucher";
 
 function DashboardLayout() {
   const [activeView, setActiveView] = useState<ActiveView>("calendario");
@@ -31,6 +38,11 @@ function DashboardLayout() {
       case "disponibilidad":    return <GuideAvailabilityBase />;
       case "guias":       return <GuidesView />;
       case "facturacion": return <BillingView />;
+      // Voucher es fullscreen por diseño (fixed inset-0) — al montarse
+      // cubre toda la pantalla igual, sidebar incluido, sin que haga
+      // falta ocultar nada más aquí. "Cerrar" vuelve a Facturación.
+      case "voucher":
+        return <Voucher open onClose={() => setActiveView("facturacion")} />;
       default: return (
         <div className="flex flex-col items-center justify-center h-64 gap-2 opacity-20">
           <span className="text-4xl">🚧</span>
