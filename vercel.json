@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/vouchers/*.ts": {
+      "includeFiles": "src/assets/**"
+    }
+  }
+}
