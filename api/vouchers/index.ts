@@ -2,9 +2,9 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "../../src/types/database.types";
-import { voucherTemplateBase64 } from "../assets/Vouchertemplatebase64.js";
-import { interFontBase64 } from "../assets/InterFontBase64.js";
+import type { Database } from "../../src/types/database.types.js";
+import { voucherTemplateBase64 } from "../assets/voucherTemplateBase64.js";
+import { interFontBase64 } from "../assets/interFontBase64.js";
 
 type SupabaseAuthClient = ReturnType<typeof createClient<Database>>;
 
