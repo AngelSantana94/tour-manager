@@ -10,7 +10,6 @@ import type { Database } from "../../src/types/database.types.js";
 
 type SupabaseAuthClient = ReturnType<typeof createClient<Database>>;
 
-// Cliente con contexto de sesión para RLS
 function getSupabaseParaPeticion(
   req: VercelRequest,
 ): SupabaseAuthClient | null {
@@ -38,7 +37,6 @@ interface VoucherInput {
   guiaEncargado: string;
 }
 
-// --- Número de voucher automático (mes/año) ---
 async function generarNumeroVoucher(
   supabase: SupabaseAuthClient,
 ): Promise<string> {
@@ -62,12 +60,15 @@ async function generarPdf(
   datos: VoucherInput,
   numero: string,
 ): Promise<Uint8Array> {
-  // Construir rutas absolutas desde la raíz de Vercel (process.cwd())
-  // OJO: Revisa que los nombres reales de tus archivos (.pdf y .ttf) coincidan en mayúsculas/minúsculas
-  const templatePath = path.join(process.cwd(), "src/assets/voucher_template.pdf");
-  const fontPath = path.join(process.cwd(), "src/assets/fonts/Inter-Variable.ttf");
+  const templatePath = path.join(
+    process.cwd(),
+    "src/assets/voucher_template.pdf",
+  );
+  const fontPath = path.join(
+    process.cwd(),
+    "src/assets/fonts/Inter-Variable.ttf",
+  );
 
-  // Lectura directa de archivos desde el disco del servidor
   const templateBytes = fs.readFileSync(templatePath);
   const pdfDoc = await PDFDocument.load(templateBytes);
   pdfDoc.registerFontkit(fontkit);
@@ -76,8 +77,13 @@ async function generarPdf(
   const font = await pdfDoc.embedFont(fontBytes);
 
   const page = pdfDoc.getPages()[0];
-  const draw = (text: string, x: number, y: number, size = 11) =>
-    page.drawText(text, { x, y, size, font, color: rgb(0.106, 0.165, 0.29) });
+  const draw = (
+    text: string,
+    x: number,
+    y: number,
+    size = 11,
+    color = rgb(0.106, 0.165, 0.29),
+  ) => page.drawText(text, { x, y, size, font, color });
 
   const hoy = new Date().toLocaleDateString("es-ES", {
     day: "numeric",
@@ -85,19 +91,48 @@ async function generarPdf(
     year: "numeric",
   });
 
-  // Dibujado de variables con coordenadas corregidas (dirección arriba, total alineado)
-  draw(`No. ${numero}`, 606, 476, 14);
-  draw(hoy, 505, 396);
-  draw(datos.empresa, 120, 442, 16);
-  draw(datos.nif, 120, 349);
-  draw(datos.direccion, 120, 392); // Dirección (Arriba)
-  draw(datos.cpCiudad, 121, 373);  // C.P. y Ciudad (Abajo)
-  draw(datos.guiaTour, 151, 301);
-  draw(datos.concepto, 62, 197);
-  draw(`${datos.importe.toFixed(2)} €`, 515, 197, 13);
-  draw(`${datos.pax} adultos`, 159, 148);
-  draw(`${datos.importe.toFixed(2)} €`, 514, 148, 13); // Alineado en Y=148
-  draw(datos.guiaEncargado, 183, 54);
+  // Formateos de datos especiales
+  const textoNif = datos.nif.toUpperCase().startsWith("NIF")
+    ? datos.nif
+    : `NIF ${datos.nif}`;
+  const textoPax = `Pax: ${datos.pax} adultos`;
+  const importeFormateado = datos.importe % 1 === 0
+    ? datos.importe.toFixed(0)
+    : datos.importe.toFixed(2);
+  const textoImporte = `${importeFormateado} €`;
+
+  // 1. Número de Voucher (Blanco, +grande, 10px a la izquierda)
+  draw(`No. ${numero}`, 596, 476, 16, rgb(1, 1, 1));
+
+  // 2. Fecha (+5px a la derecha)
+  draw(hoy, 510, 396);
+
+  // 3. Empresa (+7px a la derecha, +grande y efecto negrita con doble trazo)
+  draw(datos.empresa, 127, 442, 18);
+  draw(datos.empresa, 127.5, 442, 18);
+
+  // 4. Dirección (+3px arriba) y C.P./Ciudad
+  draw(datos.direccion, 120, 395);
+  draw(datos.cpCiudad, 121, 373);
+
+  // 5. NIF (con prefijo NIF)
+  draw(textoNif, 120, 349);
+
+  // 6. Guía Tour (+5px a la derecha, +3px arriba)
+  draw(datos.guiaTour, 156, 304);
+
+  // 7. Descripción/Concepto (+5px a la derecha, +2px arriba, fuente bastante más grande)
+  draw(datos.concepto, 67, 199, 14);
+
+  // 8. Importes (+1.5px arriba, -3px a la izquierda, sin decimales .00)
+  draw(textoImporte, 512, 198.5, 13);
+  draw(textoImporte, 511, 149.5, 13);
+
+  // 9. Pax (con prefijo Pax:, +4px a la derecha, +2px arriba)
+  draw(textoPax, 163, 150);
+
+  // 10. Guía Encargado / Tu Guía en Brujas (+10px a la derecha, +2px arriba, fuente grande)
+  draw(datos.guiaEncargado, 193, 56, 14);
 
   return pdfDoc.save();
 }
@@ -159,7 +194,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { data: signedData, error: signedError } = await supabase.storage
       .from(BUCKET)
-      .createSignedUrl(rutaStorage, 60 * 60 * 24 * 365); // 1 año
+      .createSignedUrl(rutaStorage, 60 * 60 * 24 * 365);
 
     if (signedError) throw signedError;
 
