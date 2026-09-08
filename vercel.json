@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/vouchers/*.ts": {
-      "includeFiles": "src/assets/**"
+      "includeFiles": "src/assets/font/**,src/voucher_template/**"
     }
   }
 }

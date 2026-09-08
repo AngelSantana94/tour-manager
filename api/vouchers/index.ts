@@ -2,15 +2,15 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { createClient } from "@supabase/supabase-js";
+import fs from "fs";
+import path from "path";
+
+// Importación de tipos de Supabase (con extensión .js para NodeNext)
 import type { Database } from "../../src/types/database.types.js";
-import { voucherTemplateBase64 } from "../assets/voucherTemplateBase64.js";
-import { interFontBase64 } from "../assets/interFontBase64.js";
 
 type SupabaseAuthClient = ReturnType<typeof createClient<Database>>;
 
-// Cliente "como la guía que llama": recibe su token de sesión y hace que
-// Supabase aplique las políticas RLS como si esa guía estuviera operando
-// directamente. Nunca uses aquí la service_role key para esta función.
+// Cliente con contexto de sesión para RLS
 function getSupabaseParaPeticion(
   req: VercelRequest,
 ): SupabaseAuthClient | null {
@@ -38,13 +38,7 @@ interface VoucherInput {
   guiaEncargado: string;
 }
 
-// --- Número de voucher automático (mes/año), incrementado ---
-// OJO: como este cliente respeta RLS, el conteo solo ve los vouchers de
-// ESTA guía -> la numeración es "por guía" (cada una tiene su propia
-// secuencia 01/09/2026, 02/09/2026...), no una numeración global compartida
-// entre las 4. Si más adelante quieres un contador único para toda la
-// agencia, dímelo: se resuelve con una función de Postgres con permisos
-// elevados dedicada solo a ese conteo.
+// --- Número de voucher automático (mes/año) ---
 async function generarNumeroVoucher(
   supabase: SupabaseAuthClient,
 ): Promise<string> {
@@ -68,11 +62,17 @@ async function generarPdf(
   datos: VoucherInput,
   numero: string,
 ): Promise<Uint8Array> {
-  const templateBytes = Buffer.from(voucherTemplateBase64, "base64");
+  // Construir rutas absolutas desde la raíz de Vercel (process.cwd())
+  // OJO: Revisa que los nombres reales de tus archivos (.pdf y .ttf) coincidan en mayúsculas/minúsculas
+  const templatePath = path.join(process.cwd(), "src/voucher_template/plantilla.pdf");
+  const fontPath = path.join(process.cwd(), "src/assets/font/Inter.ttf");
+
+  // Lectura directa de archivos desde el disco del servidor
+  const templateBytes = fs.readFileSync(templatePath);
   const pdfDoc = await PDFDocument.load(templateBytes);
   pdfDoc.registerFontkit(fontkit);
 
-  const fontBytes = Buffer.from(interFontBase64, "base64");
+  const fontBytes = fs.readFileSync(fontPath);
   const font = await pdfDoc.embedFont(fontBytes);
 
   const page = pdfDoc.getPages()[0];
@@ -85,17 +85,18 @@ async function generarPdf(
     year: "numeric",
   });
 
+  // Dibujado de variables con coordenadas corregidas (dirección arriba, total alineado)
   draw(`No. ${numero}`, 606, 476, 14);
   draw(hoy, 505, 396);
   draw(datos.empresa, 120, 442, 16);
   draw(datos.nif, 120, 349);
-  draw(datos.direccion, 120, 373);
-  draw(datos.cpCiudad, 121, 392);
+  draw(datos.direccion, 120, 392); // Dirección (Arriba)
+  draw(datos.cpCiudad, 121, 373);  // C.P. y Ciudad (Abajo)
   draw(datos.guiaTour, 151, 301);
   draw(datos.concepto, 62, 197);
   draw(`${datos.importe.toFixed(2)} €`, 515, 197, 13);
   draw(`${datos.pax} adultos`, 159, 148);
-  draw(`${datos.importe.toFixed(2)} €`, 514, 144, 13);
+  draw(`${datos.importe.toFixed(2)} €`, 514, 148, 13); // Alineado en Y=148
   draw(datos.guiaEncargado, 183, 54);
 
   return pdfDoc.save();
@@ -142,8 +143,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const numero = await generarNumeroVoucher(supabase);
     const pdfBytes = await generarPdf(datos, numero);
 
-    // Carpeta con el user_id como prefijo: así las políticas de Storage
-    // impiden que una guía pueda ver o escribir en la carpeta de otra.
     const nombreArchivo = `${numero.replace(/\//g, "-")}-${Date.now()}.pdf`;
     const rutaStorage = `${userId}/${
       new Date().getFullYear()
@@ -158,8 +157,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (uploadError) throw uploadError;
 
-    // Bucket privado recomendado (hay NIF y datos personales) -> URL firmada.
-    // Ajusta expiresIn si quieres que caduque antes/después (segundos).
     const { data: signedData, error: signedError } = await supabase.storage
       .from(BUCKET)
       .createSignedUrl(rutaStorage, 60 * 60 * 24 * 365); // 1 año
