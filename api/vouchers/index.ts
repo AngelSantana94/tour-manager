@@ -53,7 +53,8 @@ async function generarNumeroVoucher(
   if (error) throw error;
 
   const siguiente = (count ?? 0) + 1;
-  return `${String(siguiente).padStart(2, "0")}/${mes}/${anio}`;
+  // Formato n-mes/año (ej: 02-09/2026) para evitar confusión con el día
+  return `${String(siguiente).padStart(2, "0")}-${mes}/${anio}`;
 }
 
 async function generarPdf(
@@ -91,7 +92,7 @@ async function generarPdf(
     year: "numeric",
   });
 
-  // Formateos de datos especiales
+  // Formateos de datos
   const textoNif = datos.nif.toUpperCase().startsWith("NIF")
     ? datos.nif
     : `NIF ${datos.nif}`;
@@ -101,38 +102,39 @@ async function generarPdf(
     : datos.importe.toFixed(2);
   const textoImporte = `${importeFormateado} €`;
 
-  // 1. Número de Voucher (Blanco, +grande, 10px a la izquierda)
-  draw(`No. ${numero}`, 596, 476, 16, rgb(1, 1, 1));
+  // 1. Número de Voucher (Blanco, +10px a la derecha respecto a la última versión)
+  draw(`No. ${numero}`, 606, 476, 16, rgb(1, 1, 1));
 
-  // 2. Fecha (+5px a la derecha)
+  // 2. Fecha
   draw(hoy, 510, 396);
 
-  // 3. Empresa (+7px a la derecha, +grande y efecto negrita con doble trazo)
-  draw(datos.empresa, 127, 442, 18);
-  draw(datos.empresa, 127.5, 442, 18);
+  // 3. Empresa (+5px a la derecha -> x=132, negrita)
+  draw(datos.empresa, 132, 442, 18);
+  draw(datos.empresa, 132.5, 442, 18);
 
-  // 4. Dirección (+3px arriba) y C.P./Ciudad
-  draw(datos.direccion, 120, 395);
-  draw(datos.cpCiudad, 121, 373);
+  // 4. Dirección, C.P./Ciudad y NIF (Alineados exactamente a x=132 con EXA TRAVEL)
+  draw(datos.direccion, 132, 395);
+  draw(datos.cpCiudad, 132, 373);
+  draw(textoNif, 132, 349);
 
-  // 5. NIF (con prefijo NIF)
-  draw(textoNif, 120, 349);
+  // 5. Guía Tour (+5px derecha, +2px arriba)
+  draw(datos.guiaTour, 161, 306);
 
-  // 6. Guía Tour (+5px a la derecha, +3px arriba)
-  draw(datos.guiaTour, 156, 304);
+  // 6. Descripción/Concepto (+3px arriba, +3px derecha)
+  draw(datos.concepto, 70, 202, 14);
 
-  // 7. Descripción/Concepto (+5px a la derecha, +2px arriba, fuente bastante más grande)
-  draw(datos.concepto, 67, 199, 14);
+  // 7. Importes (+2.5px arriba, negrita suave)
+  draw(textoImporte, 511, 201, 13);
+  draw(textoImporte, 511.4, 201, 13);
+  draw(textoImporte, 511, 152, 13);
+  draw(textoImporte, 511.4, 152, 13);
 
-  // 8. Importes (+1.5px arriba, -3px a la izquierda, sin decimales .00)
-  draw(textoImporte, 512, 198.5, 13);
-  draw(textoImporte, 511, 149.5, 13);
+  // 8. Pax (+3px izquierda, +2px arriba, tamaño de fuente 12)
+  draw(textoPax, 160, 152, 12);
 
-  // 9. Pax (con prefijo Pax:, +4px a la derecha, +2px arriba)
-  draw(textoPax, 163, 150);
-
-  // 10. Guía Encargado / Tu Guía en Brujas (+10px a la derecha, +2px arriba, fuente grande)
-  draw(datos.guiaEncargado, 193, 56, 14);
+  // 9. Guía Encargado / Tu Guía en Brujas (+10px a la derecha -> x=203, negrita suavizada)
+  draw(datos.guiaEncargado, 203, 56, 14);
+  draw(datos.guiaEncargado, 203.3, 56, 14);
 
   return pdfDoc.save();
 }
