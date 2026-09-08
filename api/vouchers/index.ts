@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import fs from "fs";
-import path from "path";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../../src/types/database.types";
+import { voucherTemplateBase64 } from "../assets/Vouchertemplatebase64";
+import { interFontBase64 } from "../assets/InterFontBase64";
 
 type SupabaseAuthClient = ReturnType<typeof createClient<Database>>;
 
@@ -23,23 +23,6 @@ function getSupabaseParaPeticion(
     { global: { headers: { Authorization: `Bearer ${token}` } } },
   );
 }
-
-// Rutas literales (importante para Vercel: así detecta y empaqueta estos
-// archivos automáticamente al desplegar la función). Apuntan a donde
-// realmente están: dentro de src/assets, no de api/assets.
-const TEMPLATE_PATH = path.join(
-  process.cwd(),
-  "src",
-  "assets",
-  "voucher_template.pdf",
-);
-const FONT_PATH = path.join(
-  process.cwd(),
-  "src",
-  "assets",
-  "font",
-  "Inter-Variable.ttf",
-);
 
 const BUCKET = "vouchers";
 
@@ -85,11 +68,11 @@ async function generarPdf(
   datos: VoucherInput,
   numero: string,
 ): Promise<Uint8Array> {
-  const templateBytes = fs.readFileSync(TEMPLATE_PATH);
+  const templateBytes = Buffer.from(voucherTemplateBase64, "base64");
   const pdfDoc = await PDFDocument.load(templateBytes);
   pdfDoc.registerFontkit(fontkit);
 
-  const fontBytes = fs.readFileSync(FONT_PATH);
+  const fontBytes = Buffer.from(interFontBase64, "base64");
   const font = await pdfDoc.embedFont(fontBytes);
 
   const page = pdfDoc.getPages()[0];
