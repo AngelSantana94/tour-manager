@@ -70,6 +70,12 @@ async function generarPdf(
     "src/assets/fonts/Inter-Variable.ttf",
   );
 
+  // NOTA: si añades una fuente script/manuscrita (p.ej. "src/assets/fonts/Script-SemiBold.ttf")
+  // para el nombre del guía al pie, embébela aquí igual que con Inter y úsala solo
+  // en el draw() de "guiaEncargado" (punto 9 más abajo).
+  // const fontScriptBytes = fs.readFileSync(path.join(process.cwd(), "src/assets/fonts/Script-SemiBold.ttf"));
+  // const fontScript = await pdfDoc.embedFont(fontScriptBytes);
+
   const templateBytes = fs.readFileSync(templatePath);
   const pdfDoc = await PDFDocument.load(templateBytes);
   pdfDoc.registerFontkit(fontkit);
@@ -102,39 +108,42 @@ async function generarPdf(
     : datos.importe.toFixed(2);
   const textoImporte = `${importeFormateado} €`;
 
-  // 1. Número de Voucher (Blanco, +10px a la derecha respecto a la última versión)
-  draw(`No. ${numero}`, 606, 476, 16, rgb(1, 1, 1));
+  // 1. Número de Voucher (Blanco, +10px más a la derecha respecto a la versión anterior: 606 -> 616)
+  draw(`No. ${numero}`, 616, 476, 16, rgb(1, 1, 1));
 
   // 2. Fecha
   draw(hoy, 510, 396);
 
-  // 3. Empresa (+5px a la derecha -> x=132, negrita)
-  draw(datos.empresa, 132, 442, 18);
-  draw(datos.empresa, 132.5, 442, 18);
+  // 3. Empresa (+5px más a la derecha: 132 -> 137, negrita con doble trazo)
+  draw(datos.empresa, 137, 442, 18);
+  draw(datos.empresa, 137.5, 442, 18);
 
-  // 4. Dirección, C.P./Ciudad y NIF (Alineados exactamente a x=132 con EXA TRAVEL)
-  draw(datos.direccion, 132, 395);
-  draw(datos.cpCiudad, 132, 373);
-  draw(textoNif, 132, 349);
+  // 4. Dirección, C.P./Ciudad y NIF
+  //    Alineados en línea recta exactamente con EXA TRAVEL (x=137)
+  draw(datos.direccion, 137, 395);
+  draw(datos.cpCiudad, 137, 373);
+  draw(textoNif, 137, 349);
 
-  // 5. Guía Tour (+5px derecha, +2px arriba)
-  draw(datos.guiaTour, 161, 306);
+  // 5. Guía Tour / "Guía:" (+5px derecha, +2px arriba: 161,306 -> 166,308)
+  draw(datos.guiaTour, 166, 308);
 
-  // 6. Descripción/Concepto (+3px arriba, +3px derecha)
-  draw(datos.concepto, 70, 202, 14);
+  // 6. Descripción/Concepto (+3px arriba, +3px derecha: 70,202 -> 73,205)
+  draw(datos.concepto, 73, 205, 14);
 
-  // 7. Importes (+2.5px arriba, negrita suave)
-  draw(textoImporte, 511, 201, 13);
-  draw(textoImporte, 511.4, 201, 13);
-  draw(textoImporte, 511, 152, 13);
-  draw(textoImporte, 511.4, 152, 13);
+  // 7. Importes (+3px arriba, negrita suave con doble trazo)
+  draw(textoImporte, 511, 204, 13);
+  draw(textoImporte, 511.4, 204, 13);
+  draw(textoImporte, 511, 155, 13);
+  draw(textoImporte, 511.4, 155, 13);
 
-  // 8. Pax (+3px izquierda, +2px arriba, tamaño de fuente 12)
-  draw(textoPax, 160, 152, 12);
+  // 8. Pax (+3px izquierda, +2px arriba, un poco más grande: 160,152,12 -> 157,154,13)
+  draw(textoPax, 157, 154, 13);
 
-  // 9. Guía Encargado / Tu Guía en Brujas (+10px a la derecha -> x=203, negrita suavizada)
-  draw(datos.guiaEncargado, 203, 56, 14);
-  draw(datos.guiaEncargado, 203.3, 56, 14);
+  // 9. Guía Encargado / "Tu Guía en Brujas" (+10px más a la derecha: 203 -> 213)
+  //    Estilo manuscrito/semi-negrita suave pendiente de fuente script (ver nota arriba).
+  //    Mientras tanto se refuerza con doble trazo tenue para simular semi-negrita.
+  draw(datos.guiaEncargado, 213, 56, 14);
+  draw(datos.guiaEncargado, 213.3, 56, 14);
 
   return pdfDoc.save();
 }
