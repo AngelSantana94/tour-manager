@@ -23,8 +23,8 @@ import {
   Bell,
   Pencil,
 } from "lucide-react";
-// Dos proyectos, dos clientes: OTA (tours de plataformas externas + reservas +
-// pines) y TGB (Tu Guía en Brujas: tours/tour_schedule/bookings/schedule_exceptions).
+// Dos proyectos, dos clientes: OTA (tours de plataformas externas + reservas
+// ) y TGB (Tu Guía en Brujas: tours/tour_schedule/bookings/schedule_exceptions).
 // Antes esto apuntaba solo a TGB con una consulta que en realidad era del
 // esquema de OTA — corregido: cada cliente se usa contra su propio esquema.
 import { supabase as supabaseOTA } from "../../lib/supabaseClientOTA";
@@ -136,7 +136,7 @@ function toISODate(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-// ─── CONTEXTO — combina OTA (tours+reservations+pines) y TGB (tours+bookings) ─
+// ─── CONTEXTO — combina OTA (tours+reservations) y TGB (tours+bookings) ─
 async function loadContext(): Promise<string> {
   // ── OTA ──────────────────────────────────────────────────────────────────
   const { data: toursOta, error: otaError } = await supabaseOTA
@@ -151,9 +151,6 @@ async function loadContext(): Promise<string> {
     .order("date", { ascending: true })
     .order("time", { ascending: true });
 
-  const { data: pines } = await supabaseOTA
-    .from("pines")
-    .select("title, content, category");
 
   const toursOtaSimplificados = otaError
     ? []
@@ -214,7 +211,6 @@ async function loadContext(): Promise<string> {
   const paqueteCompleto = {
     tours_ota: toursOtaSimplificados,
     tours_tgb: toursTgbSimplificados,
-    pines_guardados: pines || [],
   };
 
   return JSON.stringify(paqueteCompleto, null, 2);
@@ -323,7 +319,6 @@ REGLAS IMPORTANTES:
 - Si el usuario pregunta por estadísticas, calcula con los datos que tienes.
 - Usa los IDs exactos de la base de datos para las acciones (tour_id, reservation_id, schedule_id) — nunca los inventes.
 - Si no encuentras un tour, reserva u horario, dilo claramente en vez de adivinar.
-- Tienes acceso a una lista de "Pines" (mensajes guardados, solo del lado OTA). Si te piden un mensaje para un cliente, búscalo en "pines_guardados", muéstralo entre comillas e indica que puede copiarse desde la sección de Mensajes.
 
 FORMATO DE RESPUESTA:
 - Puedes usar **negrita** con doble asterisco para resaltar datos clave (hora, nombre del tour, totales) — se renderiza correctamente, úsalo con naturalidad.
