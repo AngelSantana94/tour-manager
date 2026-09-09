@@ -1,10 +1,10 @@
 import NotificationBell from "../../Notifications/NotificationBell";
 import ProfileMenu from "./ProfilMenu";
 
-function Navbar() {
+export default function Navbar() {
   return (
     <>
-      {/* ── DESKTOP — sin cambios ── */}
+      {/* ── DESKTOP ── */}
       <nav className="hidden lg:flex w-full h-16 shrink-0 bg-base-200 border-b border-base-content/5 items-center justify-between px-5">
         {/* Logo */}
         <div className="flex flex-col">
@@ -12,7 +12,7 @@ function Navbar() {
             <span className="text-primary">Tour</span>
             <span className="text-base-content">Manager</span>
           </span>
-          <span className="text-[9px]  font-bold  tracking-widest mt-0.5">
+          <span className="text-[9px] font-bold tracking-widest mt-0.5 opacity-60">
             Panel de gestión para guías
           </span>
         </div>
@@ -26,7 +26,7 @@ function Navbar() {
         </div>
       </nav>
 
-      {/* ── MÓVIL — solo campana y perfil ── */}
+      {/* ── MÓVIL ── */}
       <header className="lg:hidden sticky top-0 flex w-full h-14 shrink-0 bg-base-100 border-b border-base-content/5 items-center justify-between px-4 z-50">
         <span className="text-base font-black tracking-tight">
           <span className="text-primary">Tour</span>
@@ -42,5 +42,3 @@ function Navbar() {
     </>
   );
 }
-
-export default Navbar;

@@ -1,158 +1,143 @@
 import { useState } from "react";
 import {
   BarChart3,
-  User,
+  Users,
   Calendar,
   SlidersHorizontal,
   Wallet,
+  Receipt,
+  Ticket,
+  X,
 } from "lucide-react";
 import type { ActiveView } from "../DashboardLayout";
-
-type MobileTab = ActiveView | "avisos" | "perfil";
 
 interface Props {
   activeView: ActiveView;
   onNavigate: (view: ActiveView) => void;
 }
 
-function MobileMenu({ activeView, onNavigate }: Props) {
-  const [activeTab, setActiveTab] = useState<MobileTab>(activeView);
+export default function MobileMenu({ activeView, onNavigate }: Props) {
+  const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
 
-  const handleTab = (tab: MobileTab, view?: ActiveView) => {
-    setActiveTab(tab);
-    if (view) onNavigate(view);
+  const isBillingActive =
+    activeView === "facturacion" || activeView === "voucher";
+
+  const handleSelectOption = (view: ActiveView) => {
+    onNavigate(view);
+    setIsBillingModalOpen(false);
   };
 
-  const isActive = (tab: MobileTab) => activeTab === tab;
+  const navItems = [
+    { id: "metricas", label: "Métricas", icon: BarChart3 },
+    { id: "guias", label: "Guías", icon: Users },
+    { id: "calendario", label: "Calendario", icon: Calendar },
+    { id: "disponibilidad", label: "Dispo.", icon: SlidersHorizontal },
+  ] as const;
 
   return (
-    <div className="fixed bottom-0 left-0 z-50 w-full h-16 bg-base-100 border-t border-base-content/5 flex items-center px-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
-      {/* Métricas */}
-      <button
-        onClick={() => handleTab("metricas", "metricas")}
-        className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
-      >
-        <div
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("metricas") ? "bg-primary/10" : ""}`}
-        >
-          <BarChart3
-            size={22}
-            strokeWidth={isActive("metricas") ? 2.5 : 1.8}
-            className={
-              isActive("metricas")
-                ? "text-primary"
-                : "text-base-content opacity-40"
-            }
-          />
-          <span
-            className={`text-[10px] font-medium ${isActive("metricas") ? "text-primary" : "text-base-content opacity-40"}`}
-          >
-            Métricas
-          </span>
-        </div>
-      </button>
+    <>
+      {/* Footer Móvil con alineación Flexbox estricta */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 h-16 bg-base-200/95 backdrop-blur-md border-t border-base-content/10 flex items-center justify-around px-1 lg:hidden">
+        {navItems.map((item) => {
+          const isActive = activeView === item.id;
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onNavigate(item.id)}
+              className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
+                isActive
+                  ? "text-primary font-bold"
+                  : "opacity-60 hover:opacity-100"
+              }`}
+            >
+              <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+              <span className="text-[10px] mt-1 tracking-tight">
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
 
-      {/* Guias */}
-      <button
-        onClick={() => handleTab("guias", "guias")}
-        className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
-      >
-        <div
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("metricas") ? "bg-primary/10" : ""}`}
+        {/* Botón Facturación */}
+        <button
+          onClick={() => setIsBillingModalOpen(true)}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
+            isBillingActive
+              ? "text-primary font-bold"
+              : "opacity-60 hover:opacity-100"
+          }`}
         >
-          <User
-            size={22}
-            strokeWidth={isActive("guias") ? 2.5 : 1.8}
-            className={
-              isActive("metricas")
-                ? "text-primary"
-                : "text-base-content opacity-40"
-            }
-          />
-          <span
-            className={`text-[10px] font-medium ${isActive("guias") ? "text-primary" : "text-base-content opacity-40"}`}
-          >
-            Guías
-          </span>
-        </div>
-      </button>
+          <Wallet size={20} strokeWidth={isBillingActive ? 2.5 : 2} />
+          <span className="text-[10px] mt-1 tracking-tight">Facturación</span>
+        </button>
+      </nav>
 
-      {/* Calendario */}
-      <button
-        onClick={() => handleTab("calendario", "calendario")}
-        className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
+      {/* Submenú Modal Bottom Sheet */}
+      <dialog
+        className={`modal modal-bottom sm:modal-middle ${isBillingModalOpen ? "modal-open" : ""}`}
       >
-        <div
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("calendario") ? "bg-primary/10" : ""}`}
-        >
-          <Calendar
-            size={22}
-            strokeWidth={isActive("calendario") ? 2.5 : 1.8}
-            className={
-              isActive("calendario")
-                ? "text-primary"
-                : "text-base-content opacity-40"
-            }
-          />
-          <span
-            className={`text-[10px] font-medium ${isActive("calendario") ? "text-primary" : "text-base-content opacity-40"}`}
-          >
-            Calendario
-          </span>
-        </div>
-      </button>
+        <div className="modal-box bg-base-100 rounded-t-3xl border-t border-base-content/10 p-5">
+          <div className="w-12 h-1.5 bg-base-content/20 rounded-full mx-auto mb-4" />
 
-      {/* Mensajes */}
-      <button
-        onClick={() => handleTab("disponibilidad", "disponibilidad")}
-        className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
-      >
-        <div
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("disponibilidad") ? "bg-primary/10" : ""}`}
-        >
-          <SlidersHorizontal
-            size={22}
-            strokeWidth={isActive("disponibilidad") ? 2.5 : 1.8}
-            className={
-              isActive("disponibilidad")
-                ? "text-primary"
-                : "text-base-content opacity-40"
-            }
-          />
-          <span
-            className={`text-[10px] font-medium ${isActive("disponibilidad") ? "text-primary" : "text-base-content opacity-40"}`}
-          >
-            Disponibilidad
-          </span>
-        </div>
-      </button>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-base tracking-tight flex items-center gap-2">
+              <Wallet size={18} className="text-primary" />
+              Opciones de Facturación
+            </h3>
+            <button
+              onClick={() => setIsBillingModalOpen(false)}
+              className="btn btn-sm btn-circle btn-ghost opacity-60 hover:opacity-100"
+            >
+              <X size={18} />
+            </button>
+          </div>
 
-      {/* Facturación */}
-      <button
-        onClick={() => handleTab("facturacion", "facturacion")}
-        className="flex flex-col items-center justify-center gap-1 flex-1 h-full active:scale-90 transition-transform"
-      >
-        <div
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-colors ${isActive("facturacion") ? "bg-primary/10" : ""}`}
-        >
-          <Wallet
-            size={22}
-            strokeWidth={isActive("facturacion") ? 2.5 : 1.8}
-            className={
-              isActive("facturacion")
-                ? "text-primary"
-                : "text-base-content opacity-40"
-            }
-          />
-          <span
-            className={`text-[10px] font-medium ${isActive("facturacion") ? "text-primary" : "text-base-content opacity-40"}`}
-          >
-            Facturación
-          </span>
+          <div className="grid grid-cols-1 gap-2 my-2">
+            <button
+              onClick={() => handleSelectOption("facturacion")}
+              className={`flex items-center gap-4 p-4 rounded-2xl transition-all border ${
+                activeView === "facturacion"
+                  ? "bg-primary/10 border-primary text-primary font-semibold"
+                  : "bg-base-200/60 border-transparent hover:bg-base-200"
+              }`}
+            >
+              <div className="p-2.5 rounded-xl bg-base-100 shadow-sm">
+                <Receipt size={22} />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-bold">Facturación</p>
+                <p className="text-xs opacity-60">
+                  Gestión de facturas e ingresos
+                </p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => handleSelectOption("voucher")}
+              className={`flex items-center gap-4 p-4 rounded-2xl transition-all border ${
+                activeView === "voucher"
+                  ? "bg-primary/10 border-primary text-primary font-semibold"
+                  : "bg-base-200/60 border-transparent hover:bg-base-200"
+              }`}
+            >
+              <div className="p-2.5 rounded-xl bg-base-100 shadow-sm">
+                <Ticket size={22} />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-bold">Voucher</p>
+                <p className="text-xs opacity-60">
+                  Generador de comprobantes de pago
+                </p>
+              </div>
+            </button>
+          </div>
         </div>
-      </button>
-    </div>
+
+        <form method="dialog" className="modal-backdrop">
+          <button onClick={() => setIsBillingModalOpen(false)}>close</button>
+        </form>
+      </dialog>
+    </>
   );
 }
-
-export default MobileMenu;

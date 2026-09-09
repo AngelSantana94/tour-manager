@@ -8,7 +8,6 @@ import {
   Receipt,
   Ticket,
   ChevronDown,
-  X,
   Sun,
   Moon,
   Monitor,
@@ -50,27 +49,21 @@ const menuItems: MenuItem[] = [
   },
 ];
 
-function Sidebar({ activeView, onNavigate }: Props) {
+export default function Sidebar({ activeView, onNavigate }: Props) {
   const [isOpen, setIsOpen] = useState(true);
   const [currentTheme, setCurrentTheme] = useState<"light" | "dark" | "system">(
     "system",
   );
-
-  // Acordeón del grupo Facturación (solo tiene sentido con la sidebar abierta)
   const [facturacionExpanded, setFacturacionExpanded] = useState(
     activeView === "facturacion" || activeView === "voucher",
   );
-  // Si navegan a uno de los hijos por cualquier otra vía, que el acordeón
-  // se despliegue solo para reflejarlo.
+  const [groupModal, setGroupModal] = useState<MenuItem | null>(null);
+
   useEffect(() => {
     if (activeView === "facturacion" || activeView === "voucher") {
       setFacturacionExpanded(true);
     }
   }, [activeView]);
-
-  // Modal de elección cuando la sidebar está colapsada y no hay sitio
-  // para desplegar el acordeón inline.
-  const [groupModal, setGroupModal] = useState<MenuItem | null>(null);
 
   const changeTheme = (theme: "light" | "dark" | "system") => {
     setCurrentTheme(theme);
@@ -89,209 +82,249 @@ function Sidebar({ activeView, onNavigate }: Props) {
 
   const handleGroupClick = (item: MenuItem) => {
     if (!isOpen) {
-      setGroupModal(item);
+      // Si ya está abierto este ítem, lo cierra; si no, lo abre
+      setGroupModal(groupModal?.name === item.name ? null : item);
     } else {
       setFacturacionExpanded((prev) => !prev);
     }
   };
 
   return (
-    <div className="drawer-side is-drawer-close:overflow-visible">
-      <label
-        htmlFor="my-drawer-4"
-        aria-label="close sidebar"
-        className="drawer-overlay"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <div className="hidden lg:flex sticky top-0 z-10 h-16 items-center justify-between px-4 shrink-0 bg-base-200 border-b border-base-content/5">
-          <div className="is-drawer-close:hidden flex flex-col">
-            <h2 className="font-bold tracking-tight leading-none">Suppliers</h2>
-            <p className="text-[10px] opacity-50 font-medium tracking-wider">
+    <aside
+      className={`hidden lg:flex flex-col h-screen sticky top-0 bg-base-200 border-r border-base-content/10 transition-all duration-300 z-30 ${
+        isOpen ? "w-64" : "w-16"
+      }`}
+    >
+      {/* Header */}
+      <div className="h-16 flex items-center justify-between px-3.5 border-b border-base-content/5 shrink-0">
+        {isOpen && (
+          <div className="flex flex-col overflow-hidden whitespace-nowrap">
+            <h2 className="font-bold tracking-tight leading-none text-base">
+              Suppliers
+            </h2>
+            <p className="text-[10px] opacity-50 font-medium tracking-wider mt-0.5">
               Panel de administración
             </p>
           </div>
-          <div
-            onClick={() => setIsOpen(!isOpen)}
-            className="cursor-pointer hover:opacity-70 transition-opacity is-drawer-close:mx-auto"
-          >
-            {isOpen ? (
-              <PanelLeftOpen size={20} className="flex items-center" />
-            ) : (
-              <PanelLeftClose size={20} className="flex items-center" />
-            )}
-          </div>
-        </div>
-      </label>
+        )}
+        <button
+          onClick={() => {
+            setIsOpen(!isOpen);
+            setGroupModal(null);
+          }}
+          className="p-2 rounded-xl hover:bg-base-300 transition-colors mx-auto"
+          title={isOpen ? "Colapsar menú" : "Expandir menú"}
+        >
+          {isOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
+        </button>
+      </div>
 
-      <div className="flex min-h-full flex-col items-start bg-base-200 is-drawer-close:w-14 is-drawer-open:w-64">
-        <ul className="menu w-full grow">
+      {/* Navegación (overflow-visible si está cerrado para permitir el Tooltip flotante) */}
+      <div
+        className={`flex-1 px-2 py-3 flex flex-col justify-between ${
+          isOpen ? "overflow-y-auto" : "overflow-visible"
+        }`}
+      >
+        <ul className="space-y-1">
           {menuItems.map((item) => {
-            // ─── Item con submenú (Facturación) ───────────────────────
             if (item.children) {
               const isActive = item.children.some((c) => c.view === activeView);
+              const isModalOpen = !isOpen && groupModal?.name === item.name;
+
               return (
-                <li key={item.name}>
+                <li key={item.name} className="relative">
                   <button
                     onClick={() => handleGroupClick(item)}
-                    className={`flex items-center gap-4 py-4 px-2.5 rounded-xl transition-all w-full ${
-                      isActive
-                        ? "bg-primary/10 text-primary active"
-                        : "hover:bg-base-300"
-                    }`}
+                    className={`w-full flex items-center gap-3 py-3 px-3 rounded-xl transition-all ${
+                      isActive || isModalOpen
+                        ? "bg-primary/10 text-primary font-semibold"
+                        : "hover:bg-base-300 opacity-80 hover:opacity-100"
+                    } ${!isOpen ? "justify-center" : ""}`}
                   >
-                    <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
-                    <span className="text-[15px] is-drawer-close:hidden flex-1 text-left">
-                      {item.name}
-                    </span>
-                    <ChevronDown
-                      size={16}
-                      className={`is-drawer-close:hidden opacity-50 transition-transform ${
-                        facturacionExpanded ? "rotate-180" : ""
-                      }`}
+                    <item.icon
+                      size={22}
+                      className="shrink-0"
+                      strokeWidth={isActive ? 2.5 : 2}
                     />
+                    {isOpen && (
+                      <>
+                        <span className="text-sm flex-1 text-left whitespace-nowrap">
+                          {item.name}
+                        </span>
+                        <ChevronDown
+                          size={16}
+                          className={`opacity-50 transition-transform duration-200 shrink-0 ${
+                            facturacionExpanded ? "rotate-180" : ""
+                          }`}
+                        />
+                      </>
+                    )}
                   </button>
 
+                  {/* Submenú desplegable inline (Sidebar ABIERTA) */}
                   {isOpen && facturacionExpanded && (
-                    <ul className="ml-4 mt-1 mb-1 flex flex-col gap-1 border-l border-base-content/10 pl-3">
+                    <ul className="ml-4 mt-1 space-y-1 border-l-2 border-base-content/10 pl-2">
                       {item.children.map((sub) => {
                         const subActive = activeView === sub.view;
                         return (
                           <li key={sub.name}>
                             <button
                               onClick={() => onNavigate(sub.view)}
-                              className={`flex items-center gap-3 py-2 px-2.5 rounded-lg text-sm w-full transition-all ${
+                              className={`w-full flex items-center gap-2.5 py-2 px-2.5 rounded-lg text-sm transition-all ${
                                 subActive
-                                  ? "bg-primary/10 text-primary font-semibold"
-                                  : "hover:bg-base-300 opacity-70"
+                                  ? "bg-primary/15 text-primary font-semibold"
+                                  : "hover:bg-base-300 opacity-70 hover:opacity-100"
                               }`}
                             >
                               <sub.icon
                                 size={18}
+                                className="shrink-0"
                                 strokeWidth={subActive ? 2.5 : 2}
                               />
-                              {sub.name}
+                              <span className="whitespace-nowrap">
+                                {sub.name}
+                              </span>
                             </button>
                           </li>
                         );
                       })}
                     </ul>
                   )}
+
+                  {/* Burbuja estilo Cómic / Tooltip Popover (Sidebar CERRADA) */}
+                  {isModalOpen && (
+                    <>
+                      {/* Fondo invisible para cerrar al hacer clic afuera */}
+                      <div
+                        className="fixed inset-0 z-40 cursor-default"
+                        onClick={() => setGroupModal(null)}
+                      />
+
+                      {/* Contenedor de la burbuja */}
+                      <div className="absolute left-full top-0 ml-3 z-50 w-52 bg-base-100 text-base-content rounded-2xl p-2.5 shadow-2xl border border-base-content/10 animate-in fade-in zoom-in-95 duration-150">
+                        {/* Viñeta / Colita apuntando al icono de la izquierda */}
+                        <div className="absolute -left-2 top-4 w-3.5 h-3.5 bg-base-100 rotate-45 border-l border-b border-base-content/10" />
+
+                        {/* Contenido del menú */}
+                        <div className="relative z-10 flex flex-col gap-1">
+                          <div className="px-2 py-1 mb-1 border-b border-base-content/10">
+                            <span className="text-[11px] font-bold opacity-50 uppercase tracking-wider">
+                              {item.name}
+                            </span>
+                          </div>
+
+                          {item.children.map((sub) => {
+                            const subActive = activeView === sub.view;
+                            return (
+                              <button
+                                key={sub.name}
+                                onClick={() => {
+                                  onNavigate(sub.view);
+                                  setGroupModal(null);
+                                }}
+                                className={`flex items-center gap-3 p-2.5 rounded-xl transition-all text-sm font-medium ${
+                                  subActive
+                                    ? "bg-primary/10 text-primary font-bold"
+                                    : "hover:bg-base-200 opacity-80 hover:opacity-100"
+                                }`}
+                              >
+                                <sub.icon size={18} className="shrink-0" />
+                                <span className="whitespace-nowrap">
+                                  {sub.name}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </li>
               );
             }
 
-            // ─── Item simple (resto de secciones) ─────────────────────
             const isActive = activeView === item.view;
             return (
               <li key={item.name}>
                 <button
-                  onClick={() => onNavigate(item.view!)}
-                  className={`flex items-center gap-4 py-4 px-2.5 rounded-xl transition-all ${
+                  onClick={() => {
+                    onNavigate(item.view!);
+                    setGroupModal(null);
+                  }}
+                  className={`w-full flex items-center gap-3 py-3 px-3 rounded-xl transition-all ${
                     isActive
-                      ? "bg-primary/10 text-primary active"
-                      : "hover:bg-base-300"
-                  }`}
+                      ? "bg-primary/10 text-primary font-semibold"
+                      : "hover:bg-base-300 opacity-80 hover:opacity-100"
+                  } ${!isOpen ? "justify-center" : ""}`}
                 >
-                  <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
-                  <span className="text-[15px] is-drawer-close:hidden">
-                    {item.name}
-                  </span>
+                  <item.icon
+                    size={22}
+                    className="shrink-0"
+                    strokeWidth={isActive ? 2.5 : 2}
+                  />
+                  {isOpen && (
+                    <span className="text-sm whitespace-nowrap">
+                      {item.name}
+                    </span>
+                  )}
                 </button>
               </li>
             );
           })}
+        </ul>
 
-          <div className="mx-4 my-2 border-t border-base-content/10" />
-
-          {/* Tema */}
-          <div className="mt-auto">
-            <p className="text-[10px] font-bold uppercase opacity-40 mb-3 tracking-widest is-drawer-close:hidden">
+        {/* Tema y versión */}
+        <div className="pt-4 border-t border-base-content/10 space-y-2">
+          {isOpen && (
+            <p className="text-[10px] font-bold uppercase opacity-40 px-2 tracking-widest">
               Tema
             </p>
-            <div className="grid grid-cols-1 gap-1">
-              <button
-                onClick={() => changeTheme("light")}
-                className={`flex items-center gap-4 py-2.5 px-4 rounded-xl transition-all ${
-                  currentTheme === "light"
-                    ? "bg-primary/20 text-primary font-semibold"
-                    : "hover:bg-base-300 opacity-60"
-                }`}
-              >
-                <Sun size={20} />
-                <span className="text-sm is-drawer-close:hidden">Claro</span>
-              </button>
+          )}
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => changeTheme("light")}
+              className={`w-full flex items-center gap-3 py-2 px-3 rounded-xl transition-all text-sm ${
+                currentTheme === "light"
+                  ? "bg-primary/20 text-primary font-semibold"
+                  : "hover:bg-base-300 opacity-60 hover:opacity-100"
+              } ${!isOpen ? "justify-center" : ""}`}
+            >
+              <Sun size={20} className="shrink-0" />
+              {isOpen && <span>Claro</span>}
+            </button>
 
-              <button
-                onClick={() => changeTheme("dark")}
-                className={`flex items-center gap-4 py-2.5 px-4 rounded-xl transition-all ${
-                  currentTheme === "dark"
-                    ? "bg-primary/20 text-primary font-semibold"
-                    : "hover:bg-base-300 opacity-60"
-                }`}
-              >
-                <Moon size={20} />
-                <span className="text-sm is-drawer-close:hidden">Oscuro</span>
-              </button>
+            <button
+              onClick={() => changeTheme("dark")}
+              className={`w-full flex items-center gap-3 py-2 px-3 rounded-xl transition-all text-sm ${
+                currentTheme === "dark"
+                  ? "bg-primary/20 text-primary font-semibold"
+                  : "hover:bg-base-300 opacity-60 hover:opacity-100"
+              } ${!isOpen ? "justify-center" : ""}`}
+            >
+              <Moon size={20} className="shrink-0" />
+              {isOpen && <span>Oscuro</span>}
+            </button>
 
-              <button
-                onClick={() => changeTheme("system")}
-                className={`flex items-center gap-4 py-2.5 px-4 rounded-xl transition-all ${
-                  currentTheme === "system"
-                    ? "bg-primary/20 text-primary font-semibold"
-                    : "hover:bg-base-300 opacity-60"
-                }`}
-              >
-                <Monitor size={20} />
-                <span className="text-sm is-drawer-close:hidden">Sistema</span>
-              </button>
-            </div>
+            <button
+              onClick={() => changeTheme("system")}
+              className={`w-full flex items-center gap-3 py-2 px-3 rounded-xl transition-all text-sm ${
+                currentTheme === "system"
+                  ? "bg-primary/20 text-primary font-semibold"
+                  : "hover:bg-base-300 opacity-60 hover:opacity-100"
+              } ${!isOpen ? "justify-center" : ""}`}
+            >
+              <Monitor size={20} className="shrink-0" />
+              {isOpen && <span>Sistema</span>}
+            </button>
+          </div>
 
-            <div className="mx-4 my-2 border-t border-base-content/10" />
-
-            <div className="mt-6 pt-4 border-t border-secondary/5 text-[10px] opacity-30 text-center font-mono italic uppercase is-drawer-close:hidden">
+          {isOpen && (
+            <div className="pt-2 text-[10px] opacity-30 text-center font-mono italic uppercase">
               v2.0.0 - tourmanager-IA
             </div>
-          </div>
-        </ul>
-      </div>
-
-      {/* Modal de elección cuando la sidebar está colapsada */}
-      {groupModal && (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setGroupModal(null);
-          }}
-        >
-          <div className="bg-base-100 rounded-2xl shadow-xl w-full max-w-xs p-4 flex flex-col gap-1">
-            <div className="flex items-center justify-between mb-2 px-1">
-              <h3 className="text-sm font-bold">{groupModal.name}</h3>
-              <button
-                onClick={() => setGroupModal(null)}
-                className="opacity-40 hover:opacity-80"
-                aria-label="Cerrar"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {groupModal.children!.map((sub) => (
-              <button
-                key={sub.name}
-                onClick={() => {
-                  onNavigate(sub.view);
-                  setGroupModal(null);
-                }}
-                className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-base-300 transition-all text-sm font-medium"
-              >
-                <sub.icon size={18} />
-                {sub.name}
-              </button>
-            ))}
-          </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </aside>
   );
 }
-
-export default Sidebar;
