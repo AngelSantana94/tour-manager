@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, Share2, Trash2, X } from "lucide-react";
 import { useAuth } from "../login/AuthContext";
 // Cliente real de Supabase (base de datos OTA) — mismo que usa el resto
@@ -21,6 +21,12 @@ interface VoucherFormData {
 interface VoucherResult {
   id: string;
   pdfUrl: string;
+}
+
+interface DatosEmpresa {
+  nif: string;
+  direccion: string;
+  cpCiudad: string;
 }
 
 const CAMPOS_VACIOS: VoucherFormData = {
@@ -55,6 +61,49 @@ export default function GenerarVoucher({ open, onClose }: GenerarVoucherProps) {
   const [error, setError] = useState<string | null>(null);
   const [borrando, setBorrando] = useState(false);
 
+  // Historial propio del guía (RLS ya se encarga de que solo veamos
+  // nuestros propios vouchers): empresas -> sus últimos datos fiscales,
+  // y la lista de guías de tour usados antes. Alimenta los <datalist>
+  // y el autorrelleno al elegir una empresa ya conocida.
+  const [empresasConocidas, setEmpresasConocidas] = useState<
+    Record<string, DatosEmpresa>
+  >({});
+  const [guiasConocidas, setGuiasConocidas] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("vouchers")
+        .select("empresa, nif, direccion, cp_ciudad, guia_tour, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error || !data) return;
+
+      const empresas: Record<string, DatosEmpresa> = {};
+      const guias = new Set<string>();
+
+      for (const fila of data) {
+        // El primero que aparece por empresa es el más reciente (ya viene
+        // ordenado descendente), así que si ya está registrada no la
+        // pisamos con una versión más vieja.
+        const clave = fila.empresa.trim().toLowerCase();
+        if (!empresas[clave]) {
+          empresas[clave] = {
+            nif: fila.nif,
+            direccion: fila.direccion,
+            cpCiudad: fila.cp_ciudad,
+          };
+        }
+        if (fila.guia_tour?.trim()) guias.add(fila.guia_tour.trim());
+      }
+
+      setEmpresasConocidas(empresas);
+      setGuiasConocidas(Array.from(guias).sort());
+    })();
+  }, [open]);
+
   if (!open) return null;
 
   const camposCompletos = Object.values(form).every(
@@ -63,6 +112,21 @@ export default function GenerarVoucher({ open, onClose }: GenerarVoucherProps) {
 
   const handleChange = (campo: keyof VoucherFormData, valor: string) => {
     setForm((prev) => ({ ...prev, [campo]: valor }));
+  };
+
+  // Al salir del campo Empresa, si coincide con una que ya conocemos,
+  // autorrellenamos NIF / Dirección / CP+Ciudad con sus últimos datos.
+  const handleEmpresaBlur = () => {
+    const clave = form.empresa.trim().toLowerCase();
+    const conocida = empresasConocidas[clave];
+    if (!conocida) return;
+
+    setForm((prev) => ({
+      ...prev,
+      nif: conocida.nif,
+      direccion: conocida.direccion,
+      cpCiudad: conocida.cpCiudad,
+    }));
   };
 
   const handleGenerar = async () => {
@@ -164,7 +228,17 @@ export default function GenerarVoucher({ open, onClose }: GenerarVoucherProps) {
             label="Empresa o persona receptora"
             value={form.empresa}
             onChange={(v) => handleChange("empresa", v)}
+            onBlur={handleEmpresaBlur}
+            listId="empresas-conocidas"
           />
+          {/* datalist con las empresas ya usadas — escribir un nombre nuevo
+              que no esté en la lista sigue funcionando con total libertad */}
+          <datalist id="empresas-conocidas">
+            {Object.keys(empresasConocidas).map((clave) => (
+              <option key={clave} value={clave} />
+            ))}
+          </datalist>
+
           <Campo
             label="NIF"
             value={form.nif}
@@ -180,11 +254,19 @@ export default function GenerarVoucher({ open, onClose }: GenerarVoucherProps) {
             value={form.cpCiudad}
             onChange={(v) => handleChange("cpCiudad", v)}
           />
+
           <Campo
             label="Guía del tour"
             value={form.guiaTour}
             onChange={(v) => handleChange("guiaTour", v)}
+            listId="guias-conocidas"
           />
+          <datalist id="guias-conocidas">
+            {guiasConocidas.map((nombre) => (
+              <option key={nombre} value={nombre} />
+            ))}
+          </datalist>
+
           <Campo
             label="Concepto"
             value={form.concepto}
@@ -290,14 +372,18 @@ function Campo({
   label,
   value,
   onChange,
+  onBlur,
   type = "text",
   placeholder,
+  listId,
 }: {
   label: string;
   value: string;
   onChange: (valor: string) => void;
+  onBlur?: () => void;
   type?: string;
   placeholder?: string;
+  listId?: string;
 }) {
   return (
     <label className="block">
@@ -309,6 +395,8 @@ function Campo({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        list={listId}
         className="input input-bordered w-full bg-base-100"
       />
     </label>
