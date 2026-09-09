@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Share2, Trash2, X } from "lucide-react";
+import { Download, Share2, Trash2 } from "lucide-react";
 import { useAuth } from "../login/AuthContext";
 // Cliente real de Supabase (base de datos OTA) — mismo que usa el resto
 // de la app, importado directamente de su origen en vez de pasar por el
@@ -51,12 +51,7 @@ async function getAuthHeader(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-interface GenerarVoucherProps {
-  open: boolean;
-  onClose: () => void;
-}
-
-export default function GenerarVoucher({ open, onClose }: GenerarVoucherProps) {
+export default function Voucher() {
   const { profile } = useAuth();
 
   const [form, setForm] = useState<VoucherFormData>(CAMPOS_VACIOS);
@@ -80,8 +75,6 @@ export default function GenerarVoucher({ open, onClose }: GenerarVoucherProps) {
   const [guiaTourModoNuevo, setGuiaTourModoNuevo] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-
     (async () => {
       const { data, error } = await supabase
         .from("vouchers")
@@ -117,9 +110,7 @@ export default function GenerarVoucher({ open, onClose }: GenerarVoucherProps) {
       setEmpresaModoNuevo(Object.keys(empresas).length === 0);
       setGuiaTourModoNuevo(guias.size === 0);
     })();
-  }, [open]);
-
-  if (!open) return null;
+  }, []);
 
   const camposCompletos = Object.values(form).every(
     (valor) => valor.trim() !== "",
@@ -237,27 +228,16 @@ export default function GenerarVoucher({ open, onClose }: GenerarVoucherProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-base-200 overflow-y-auto">
-      {/* Barra superior */}
-      <div className="flex items-center justify-between border-b border-base-content/10 bg-base-100 px-5 py-4 sm:px-8">
-        <div>
-          <h1 className="text-xl font-black tracking-tight sm:text-2xl">
-            Generar voucher
-          </h1>
-          {profile && (
-            <p className="text-xs opacity-40 mt-0.5">{profile.name}</p>
-          )}
-        </div>
-        <button
-          onClick={onClose}
-          aria-label="Cerrar"
-          className="btn btn-sm btn-circle btn-ghost"
-        >
-          <X size={16} />
-        </button>
+    <div className="flex flex-col gap-6 pb-8">
+      {/* Header — mismo patrón que BillingView, sin nombre del guía debajo:
+          ya se ve en el propio Navbar de la app, aquí sobraba. */}
+      <div>
+        <h1 className="text-2xl font-black tracking-tight">
+          Genera tu Voucher
+        </h1>
       </div>
 
-      <div className="mx-auto w-full max-w-xl flex-1 px-5 py-6 sm:px-8">
+      <div className="mx-auto w-full max-w-xl">
         {/* Formulario */}
         <div className="bg-base-100 border border-base-content/10 rounded-2xl p-5 space-y-4">
           <ComboBox
