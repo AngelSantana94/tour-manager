@@ -42,12 +42,19 @@ async function obtenerFontScript(pdfDoc: PDFDocument) {
       if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
       const buffer = await respuesta.arrayBuffer();
       cacheFontScriptBytes = new Uint8Array(buffer);
+      console.log(
+        "Fuente script (Caveat) descargada correctamente, bytes:",
+        cacheFontScriptBytes.length,
+      );
     }
     return await pdfDoc.embedFont(cacheFontScriptBytes);
   } catch (err) {
     // Si Google Fonts no responde (red caída, bloqueo, etc.), no rompemos la
     // generación del voucher: caemos de vuelta a Inter.
-    console.error("No se pudo descargar la fuente script:", err);
+    console.error(
+      "No se pudo descargar la fuente script (usando Inter como fallback):",
+      err,
+    );
     return null;
   }
 }
@@ -136,8 +143,8 @@ async function generarPdf(
     : datos.importe.toFixed(2);
   const textoImporte = `${importeFormateado} €`;
 
-  // 1. Número de Voucher (Blanco, -12px a la izquierda respecto a la versión anterior: 616 -> 604)
-  draw(`No. ${numero}`, 604, 476, 16, rgb(1, 1, 1));
+  // 1. Número de Voucher (Blanco, -10px a la izquierda respecto a la versión anterior: 604 -> 594)
+  draw(`No. ${numero}`, 594, 476, 16, rgb(1, 1, 1));
 
   // 2. Fecha
   draw(hoy, 510, 396);
@@ -167,14 +174,14 @@ async function generarPdf(
   // 8. Pax (-3px izquierda, +2px arriba: 157,154 -> 154,156)
   draw(textoPax, 154, 156, 13);
 
-  // 9. Guía Encargado / "Tu Guía en Brujas" (+10px más a la derecha: 213 -> 223)
+  // 9. Guía Encargado / "Tu Guía en Brujas" (+10px más a la derecha: 223 -> 233)
   //    Usa Caveat SemiBold importada de Google Fonts si la descarga funcionó;
   //    si no, cae a Inter con doble trazo tenue simulando semi-negrita.
   if (fontScript) {
-    draw(datos.guiaEncargado, 223, 56, 16, undefined, fontScript);
+    draw(datos.guiaEncargado, 233, 56, 16, undefined, fontScript);
   } else {
-    draw(datos.guiaEncargado, 223, 56, 14);
-    draw(datos.guiaEncargado, 223.3, 56, 14);
+    draw(datos.guiaEncargado, 233, 56, 14);
+    draw(datos.guiaEncargado, 233.3, 56, 14);
   }
 
   return pdfDoc.save();
