@@ -187,17 +187,56 @@ export default function Voucher() {
     }
   };
 
+  // ── 1. Descargar documento directo como archivo Blob ──
+  const handleDescargar = async () => {
+    if (!resultado) return;
+    try {
+      const res = await fetch(resultado.pdfUrl);
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `Voucher_${form.empresa || "Pago"}.pdf`;
+
+      document.body.appendChild(link);
+      link.click();
+
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(resultado.pdfUrl, "_blank");
+    }
+  };
+
+  // ── 2. Compartir el PDF como archivo adjunto nativo en WhatsApp/Móvil ──
   const handleCompartir = async () => {
     if (!resultado) return;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: "Voucher", url: resultado.pdfUrl });
-      } catch {
-        // el usuario cerró el diálogo de compartir, no hacemos nada
+    try {
+      const res = await fetch(resultado.pdfUrl);
+      const blob = await res.blob();
+      const fileName = `Voucher_${form.empresa || "Pago"}.pdf`;
+      const file = new File([blob], fileName, { type: "application/pdf" });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "Voucher de Pago",
+          text: "Adjunto el comprobante de pago.",
+        });
+      } else if (navigator.share) {
+        await navigator.share({
+          title: "Voucher de Pago",
+          url: resultado.pdfUrl,
+        });
+      } else {
+        await navigator.clipboard.writeText(resultado.pdfUrl);
+        alert("Enlace copiado al portapapeles");
       }
-    } else {
-      await navigator.clipboard.writeText(resultado.pdfUrl);
-      alert("Enlace copiado al portapapeles");
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") {
+        console.error("Error al compartir:", error);
+      }
     }
   };
 
@@ -229,8 +268,7 @@ export default function Voucher() {
 
   return (
     <div className="flex flex-col gap-6 pb-8">
-      {/* Header — mismo patrón que BillingView, sin nombre del guía debajo:
-          ya se ve en el propio Navbar de la app, aquí sobraba. */}
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-black tracking-tight">
           Genera tu Voucher
@@ -343,14 +381,13 @@ export default function Voucher() {
                 <Share2 size={14} />
                 Compartir
               </button>
-              <a
-                href={resultado.pdfUrl}
-                download
+              <button
+                onClick={handleDescargar}
                 className="btn btn-sm gap-2 bg-base-200 hover:bg-base-300 border-none"
               >
                 <Download size={14} />
                 Descargar
-              </a>
+              </button>
               <button
                 onClick={handleBorrar}
                 disabled={borrando}
@@ -408,8 +445,6 @@ function Campo({
 }
 
 // ─── ComboBox: select DaisyUI con opción "+ Añadir nueva" ─────────────────
-// Modo lista: <select> con las opciones conocidas + "+ Añadir nueva".
-// Modo nuevo: campo de texto libre, con enlace para volver a la lista.
 function ComboBox({
   label,
   valorLibre,
