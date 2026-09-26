@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../lib/supabaseClientOTA";
+import { supabase } from "../lib/supabaseClient";
 
 export interface TourRow {
   id: string;

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClientOTA";
+import { supabase } from "../lib/supabaseClient";
 import type { User, Session } from "@supabase/supabase-js";
 
 export interface Profile {
@@ -11,12 +11,29 @@ export interface Profile {
   created_at: string;
 }
 
+// Los 3 idiomas de la webapp. Se guarda en el metadata del usuario al
+// registrarse, y el Send Email Hook (edge function) lo lee para elegir la
+// plantilla del correo de confirmación. Si el registro es previo a esto, o
+// no llegó por alguna razón, el hook usa "es" por defecto.
+export type AppLanguage = "es" | "nl" | "en";
+
+export interface SignUpResult {
+  error: string | null;
+  needsEmailConfirmation: boolean;
+}
+
 interface AuthContextValue {
   user: User | null;
   profile: Profile | null;
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    language: AppLanguage,
+  ) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
   isAdmin: boolean;
 }
@@ -80,6 +97,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return null;
   };
 
+  // El nombre y el idioma viajan como metadata (options.data). El nombre lo
+  // lee el trigger de la BD (link_or_create_guide_on_signup); el idioma lo
+  // lee el Send Email Hook (edge function auth-send-email) para elegir la
+  // plantilla del correo de confirmación. Ninguno de los dos tiene relación
+  // con columnas de tabla, son metadata libre de Supabase Auth.
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    language: AppLanguage,
+  ): Promise<SignUpResult> => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: fullName, preferred_language: language } },
+    });
+    if (error) return { error: error.message, needsEmailConfirmation: false };
+    // Si el proyecto exige confirmar el email, signUp no devuelve sesión
+    // todavía — hay que avisar al guía de que revise su correo.
+    return { error: null, needsEmailConfirmation: !data.session };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -95,6 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         session,
         loading,
         signIn,
+        signUp,
         signOut,
         isAdmin: profile?.role === "admin",
       }}

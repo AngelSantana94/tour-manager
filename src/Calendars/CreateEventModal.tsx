@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, MapPin, Calendar, Clock, ChevronDown } from "lucide-react";
-import { supabase } from "../lib/supabaseClientOTA";
+import { supabase } from "../lib/supabaseClient";
 
 // ─── TIPOS ───────────────────────────────────────────────────────────────────
 export interface CalendarEvent {
@@ -95,15 +95,17 @@ export default function CreateEventModal({
   const [existingTitles, setExistingTitles] = useState<string[]>([]);
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("tours").select("title");
-      if (data) {
-        const unique = [
-          ...new Set(data.map((t: any) => t.title as string)),
-        ].sort();
-        setExistingTitles(unique);
-      }
-    })();
+  (async () => {
+    const { data } = await supabase.from("tours").select("tour_type");
+    if (data) {
+      const unique = [
+        ...new Set(
+          data.map((t: any) => t.tour_type as string).filter(Boolean),
+        ),
+      ].sort();
+      setExistingTitles(unique);
+    }
+  })();
   }, []);
 
   // Horarios ocupados en la fecha seleccionada

@@ -89,7 +89,7 @@ export default function BoardMonth({
   });
 
   return (
-    <div className="p-4 flex flex-col items-center gap-4 w-full">
+    <div className="flex flex-col items-center gap-4 w-full">
       <div className="bg-base-100 w-full max-w-[260px] rounded-2xl p-3 border border-base-content/10 shadow-sm">
 
         {/* Cabecera navegación */}

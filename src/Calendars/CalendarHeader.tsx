@@ -1,5 +1,6 @@
-import { ChevronLeft, ChevronRight, Plus, ChevronDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, FileSpreadsheet } from "lucide-react";
 import type { CalendarView } from "./CalendarView";
+import AddTourMenu from "./AddTourMenu";
 
 interface CalendarHeaderProps {
   headerLabel: string;
@@ -8,17 +9,15 @@ interface CalendarHeaderProps {
   onPrev: () => void;
   onNext: () => void;
   onToday: () => void;
-  onCreateEvent: () => void;
+  onUploadDocument: () => void;
   onRefetch?: () => void;
 
-  // "" = todas, "external" = plataformas externas (OTA), "tgb" = Tu Guía en Brujas
-  selectedSource: string;
-  onSourceChange: (v: string) => void;
+  // Opcionales para evitar errores de TypeScript en vistas simplificadas
+  selectedSource?: string;
+  onSourceChange?: (v: string) => void;
 
-  // Muestra también horarios TGB sin reservas (por defecto solo se ven los
-  // que tienen alguna reserva confirmada)
-  showEmptyTgb: boolean;
-  onShowEmptyTgbChange: (v: boolean) => void;
+  showEmptyTgb?: boolean;
+  onShowEmptyTgbChange?: (v: boolean) => void;
 
   guides: string[];
   selectedGuide: string;
@@ -38,10 +37,10 @@ export default function CalendarHeader({
   onPrev,
   onNext,
   onToday,
-  onCreateEvent,
-  selectedSource,
+  onUploadDocument,
+  selectedSource = "",
   onSourceChange,
-  showEmptyTgb,
+  showEmptyTgb = false,
   onShowEmptyTgbChange,
   guides,
   selectedGuide,
@@ -78,7 +77,7 @@ export default function CalendarHeader({
           Hoy
         </button>
 
-        {/* Toggle Semana / Día — negro empresarial */}
+        {/* Toggle Semana / Día */}
         <div className="join border border-base-content/15 rounded-lg overflow-hidden">
           <button
             onClick={() => onViewChange("week")}
@@ -107,49 +106,55 @@ export default function CalendarHeader({
 
       {/* ── DERECHA: acciones y filtros ── */}
       <div className="flex items-center gap-3 flex-wrap">
-        {/* Crear evento — negro empresarial */}
-        <button
-          onClick={onCreateEvent}
-          className="btn btn-sm gap-2 px-4 bg-base-content hover:bg-base-content/85 border-none text-base-100 font-semibold"
-        >
-          <Plus size={16} strokeWidth={2.5} />
-          Crear evento
-        </button>
+        {/* Añadir tour — desplegable (de momento solo "Cargar documento") */}
+        <AddTourMenu
+          options={[
+            {
+              label: "Cargar documento",
+              icon: <FileSpreadsheet size={15} />,
+              onClick: onUploadDocument,
+            },
+          ]}
+        />
 
-        {/* Fuente: todas / externas / Tu Guía en Brujas */}
-        <div className="relative flex items-center gap-1.5 px-3 py-1.5 border border-base-content/20 rounded-lg bg-base-100 hover:bg-base-200 transition-colors select-none">
-          <span className="text-sm opacity-50">Fuente:</span>
-          <select
-            value={selectedSource}
-            onChange={(e) => onSourceChange(e.target.value)}
-            className="text-sm font-bold bg-transparent outline-none cursor-pointer appearance-none pr-4 text-base-content"
-          >
-            {Object.entries(SOURCE_LABELS).map(([value, label]) => (
-              <option key={value || "all"} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={13}
-            className="absolute right-2 opacity-40 pointer-events-none"
-          />
-        </div>
+        {/* Fuente */}
+        {onSourceChange && (
+          <div className="relative flex items-center gap-1.5 px-3 py-1.5 border border-base-content/20 rounded-lg bg-base-100 hover:bg-base-200 transition-colors select-none">
+            <span className="text-sm opacity-50">Fuente:</span>
+            <select
+              value={selectedSource}
+              onChange={(e) => onSourceChange(e.target.value)}
+              className="text-sm font-bold bg-transparent outline-none cursor-pointer appearance-none pr-4 text-base-content"
+            >
+              {Object.entries(SOURCE_LABELS).map(([value, label]) => (
+                <option key={value || "all"} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={13}
+              className="absolute right-2 opacity-40 pointer-events-none"
+            />
+          </div>
+        )}
 
-        {/* Toggle: mostrar horarios TGB sin reservas */}
-        <label className="flex items-center gap-2 px-3 py-1.5 border border-base-content/20 rounded-lg bg-base-100 hover:bg-base-200 transition-colors cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={showEmptyTgb}
-            onChange={(e) => onShowEmptyTgbChange(e.target.checked)}
-            className="toggle toggle-sm"
-          />
-          <span className="text-sm font-semibold">
-            Mostrar horarios sin reservas
-          </span>
-        </label>
+        {/* Toggle: mostrar horarios sin reservas */}
+        {onShowEmptyTgbChange && (
+          <label className="flex items-center gap-2 px-3 py-1.5 border border-base-content/20 rounded-lg bg-base-100 hover:bg-base-200 transition-colors cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showEmptyTgb}
+              onChange={(e) => onShowEmptyTgbChange(e.target.checked)}
+              className="toggle toggle-sm"
+            />
+            <span className="text-sm font-semibold">
+              Mostrar horarios sin reservas
+            </span>
+          </label>
+        )}
 
-        {/* Guía — se mostrará cuando haya datos */}
+        {/* Filtro Guía */}
         {guides.length > 0 && (
           <div className="relative flex items-center gap-1.5 px-3 py-1.5 border border-base-content/20 rounded-lg bg-base-100 hover:bg-base-200 transition-colors select-none">
             <span className="text-sm opacity-50">Guía:</span>

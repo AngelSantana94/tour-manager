@@ -1,16 +1,14 @@
 import type { CalendarEvent } from "./CreateEventModal";
 import spainFlag from "../assets/lenguage-logos/spainFlag.png";
-import tuGuiaLogo from "../assets/platforms-logos/tuguiaenbrujas.avif";
 
 interface BoardWeekProps {
   selectedDate: string;
   events: CalendarEvent[];
-  showEmptyTgb: boolean;
-  onCreateEvent: () => void;
+  onCreateEvent?: () => void;
   onSelectEvent: (eventId: string) => void;
 }
 
-function pad(n: number) {
+function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
@@ -35,176 +33,103 @@ function getWeekDates(anchorStr: string): string[] {
 
 const DAY_LABELS = ["lun.", "mar.", "mié.", "jue.", "vie.", "sáb.", "dom."];
 
-// Un evento es de TGB si su adapter de origen lo marcó como tal en meta.source
-// (ver SupabaseTGB.adapter.ts). Los de OTA vienen con meta.source = platform ?? "ota".
-// Nada de comparar por texto del nombre del tour ni por plataformas que no existen en TGB.
-function isTuGuiaEvent(event: CalendarEvent): boolean {
-  return event.meta?.source === "tgb";
+// Franjas manuales (columna `period` en `tours`, la pone la coordinadora).
+type Period = "AM" | "PM" | "NT";
+const PERIOD_ORDER: Period[] = ["AM", "PM", "NT"];
+
+function periodOf(e: CalendarEvent): Period {
+  const p = e.meta?.period as Period | undefined;
+  return p ?? "NT";
 }
 
-// Provisional: hasta que exista el filtro de disponibilidad en el header,
-// las tarjetas TGB sin ninguna reserva activa (pax = 0) simplemente no se
-// muestran en el tablero — no aportan nada que gestionar todavía.
-function hasActiveReservations(event: CalendarEvent): boolean {
-  return ((event.meta?.pax as number) ?? 0) > 0;
+// ─── COLOR POR PROVEEDOR (solo 3) ───────────────────────────────────────────
+// Confirmado por consulta a `tours` (2026-09-23): son estos 3 provider_id.
+// El nombre real de cada uno (Visolumen / Bespoke / Vivalux) queda pendiente
+// de asignar — el orden abajo no importa para que funcione, solo decide qué
+// color le toca a cuál mientras tanto. Para cambiarlo, reordena las líneas.
+const PROVIDER_ORDER: string[] = [
+  "be3caa85-f4f2-4d3f-b089-bc4de92dbea4", // el más frecuente (564 tours)
+  "4b751fd2-9c8a-483c-9eaf-db9d6d60549b", // 13 tours
+  "f10434fa-147d-4a4f-9b19-1aff4cddc2bc", // 3 tours
+];
+
+const PROVIDER_COLORS = ["#4F46E5", "#10B981", "#A78BFA"]; // indigo, verdoso, malva
+
+const FALLBACK_PALETTE = [
+  "#0EA5E9",
+  "#059669",
+  "#D97706",
+  "#DB2777",
+  "#7C3AED",
+  "#DC2626",
+  "#0D9488",
+];
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
 }
 
-// Salvaguarda para cuando este mismo toggle se reutilice en una vista más
-// amplia que una semana (ej. un futuro BoardMonth): limita a mes actual ±1
-// respecto a la fecha de referencia, para no pintar horarios vacíos de todo
-// el año. En BoardWeek esto no cambia nada en la práctica, porque la semana
-// visible nunca se sale de ese rango de todos modos.
-function isWithinThreeMonthWindow(
-  dateStr: string,
-  referenceDateStr: string,
-): boolean {
-  const [ry, rm] = referenceDateStr.split("-").map(Number);
-  const [dy, dm] = dateStr.split("-").map(Number);
-  const refIndex = ry * 12 + (rm - 1);
-  const dateIndex = dy * 12 + (dm - 1);
-  return Math.abs(dateIndex - refIndex) <= 1;
-}
-
-// Normalizador de formato HH:MM (por si la DB devuelve "15:00:00")
-function formatTime(timeStr: string): string {
-  if (!timeStr) return "";
-  return timeStr.slice(0, 5);
-}
-
-// Clave de agrupación de tarjetas dentro de una misma celda (fecha+hora).
-// OTA: todo se combina en una sola tarjeta (mismo tour físico repartido en
-// varias plataformas — comportamiento ya existente, no se toca).
-// TGB: se agrupa por tourId, porque a la misma hora puede haber tours
-// DISTINTOS (p. ej. "Free tour" y "Brujas completo" ambos a las 10:45) que
-// antes se fusionaban en una sola tarjeta sumando su aforo por error.
-function eventGroupKey(event: CalendarEvent): string {
-  if (event.meta?.source === "tgb") {
-    return `tgb:${(event.meta?.tourId as string) ?? (event.meta?.scheduleId as string) ?? event.id}`;
-  }
-  return "ota";
-}
-
-function groupEventsByTour(events: CalendarEvent[]): CalendarEvent[][] {
-  const map = new Map<string, CalendarEvent[]>();
-  for (const e of events) {
-    const key = eventGroupKey(e);
-    const group = map.get(key) ?? [];
-    group.push(e);
-    map.set(key, group);
-  }
-  return Array.from(map.values());
+function providerColor(providerId: string | null | undefined): string {
+  if (!providerId) return "#6B7280"; // gris genérico, tour sin proveedor (hay 1 así hoy)
+  const fixedIndex = PROVIDER_ORDER.indexOf(providerId);
+  return fixedIndex !== -1
+    ? PROVIDER_COLORS[fixedIndex]
+    : FALLBACK_PALETTE[hashString(providerId) % FALLBACK_PALETTE.length];
 }
 
 // ─── TARJETA EVENTO ─────────────────────────────────────────────────────────
 function EventCard({
-  events,
+  event,
   isPast,
   onSelect,
 }: {
-  events: CalendarEvent[];
+  event: CalendarEvent;
   isPast: boolean;
   onSelect: () => void;
 }) {
-  const first = events[0];
-  const totalPax = events.reduce(
-    (acc, e) => acc + ((e.meta?.pax as number) ?? 0),
-    0,
-  );
-  const reservations = events.flatMap(
-    (e) => (e.meta?.reservations as any[]) ?? [],
-  );
-  const allAttended =
-    isPast &&
-    reservations.length > 0 &&
-    reservations
-      .filter((r) => r.status !== "cancelled")
-      .every((r) => r.attended);
-
-  const isTuGuia = isTuGuiaEvent(first);
-
-  // Estado real de disponibilidad para TGB: cerrado a mano (schedule_exceptions.is_closed)
-  // o aforo agotado (pax >= aforo). OTA no gestiona este estado desde aquí (de momento).
-  const isClosed = isTuGuia && events.some((e) => e.meta?.isClosed === true);
-  const totalCapacity = events.reduce(
-    (acc, e) => acc + ((e.meta?.maxCapacity as number) ?? 0),
-    0,
-  );
-  const isFull = isTuGuia && totalCapacity > 0 && totalPax >= totalCapacity;
-  const isDisabled = isClosed || isFull;
-
-  // Sin verde corporativo de Guruwalk — tarjetas en negro/gris, igual que
-  // el resto de botones "negro empresarial" ya usados en el header.
-  const cardClass = allAttended
-    ? "bg-indigo-500/15 text-indigo-900 border border-indigo-500/30 backdrop-blur-xs" // Capa muy suave para los ya atendidos
-    : isPast
-      ? "bg-indigo-600/50 text-white hover:bg-indigo-600/60 backdrop-blur-xs" // Capa translúcida exacta que tenías, ahora en índigo
-      : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-md"; // Sólido y vibrante para los tours activos/futuros
+  const pax = (event.meta?.pax as number) ?? 0;
+  const operatorName = (event.meta?.operatorName as string | null) ?? null;
+  const providerId = (event.meta?.providerId as string | null) ?? null;
+  const color = providerColor(providerId);
 
   return (
     <button
       onClick={onSelect}
       className={[
         "rounded-xl px-2.5 py-2 w-full max-w-full min-h-[62px] overflow-hidden flex flex-col justify-between gap-1.5",
-        "active:scale-[0.98] transition-all text-left relative shadow-xs hover:shadow-md",
-        cardClass,
+        "active:scale-[0.98] transition-all text-left relative shadow-xs hover:shadow-md text-white",
+        isPast ? "opacity-60 hover:opacity-80" : "hover:brightness-110",
       ].join(" ")}
+      style={{ backgroundColor: color }}
+      title={operatorName ?? "Operador sin identificar"}
     >
+      {/* Línea 1, de izquierda a derecha: bandera · operador ... pax (si hay) */}
       <div className="flex items-center justify-between gap-1 w-full">
-        {/* Izquierda: Icono OTA/TGB (con candado si aplica) + Hora */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {isTuGuia ? (
-            <div className="relative flex items-center justify-center shrink-0">
-              <img
-                src={tuGuiaLogo}
-                alt="Tu Guía en Brujas"
-                className={[
-                  "w-4 h-4 rounded-full object-cover transition-all",
-                  isDisabled
-                    ? "border border-red-500 opacity-80"
-                    : "border border-white/20",
-                ].join(" ")}
-              />
-              {isDisabled && (
-                <span className="absolute -top-1 -right-1 text-[7px] leading-none bg-red-600 text-white p-0.5 rounded-full shadow-sm">
-                  🔒
-                </span>
-              )}
-            </div>
-          ) : (
-            <img
-              src={spainFlag}
-              alt="ES"
-              className="w-3.5 h-3.5 rounded-full shrink-0 object-cover"
-            />
-          )}
-
-          <span className="text-[10px] font-bold leading-tight">
-            {formatTime(first.time)}
+        <div className="flex items-center gap-1.5 min-w-0">
+          {/* PROVISIONAL: bandera fija de España — pendiente de resolver por
+              idioma real del tour cuando ese dato esté disponible. */}
+          <img
+            src={spainFlag}
+            alt="ES"
+            className="w-3.5 h-3.5 rounded-full shrink-0 object-cover"
+          />
+          <span className="text-[10px] font-bold leading-tight truncate">
+            {operatorName ?? "Sin operador"}
           </span>
         </div>
 
-        {/* Derecha: Solo Pax (Alineación limpia) */}
-        <div className="flex items-center gap-1 shrink-0 ml-auto">
-          <span
-            className={[
-              "text-[9.5px] font-semibold shrink-0",
-              allAttended ? "opacity-40" : "opacity-90",
-            ].join(" ")}
-          >
-            pax: {totalPax}
-            {isTuGuia && totalCapacity > 0 && ` / ${totalCapacity}`}
+        {pax > 0 && (
+          <span className="text-[9.5px] font-semibold shrink-0 ml-auto opacity-90">
+            pax: {pax}
           </span>
-        </div>
+        )}
       </div>
 
-      {/* Nombre del tour ligeramente más grande (10.5px) */}
-      <span
-        className={[
-          "text-[10.5px] font-medium truncate w-full block leading-tight",
-          allAttended ? "opacity-40" : "opacity-85",
-        ].join(" ")}
-      >
-        {first.tour}
+      {/* Línea 2: tipo de tour */}
+      <span className="text-[10.5px] font-medium truncate w-full block leading-tight opacity-85">
+        {event.tour}
       </span>
     </button>
   );
@@ -214,68 +139,28 @@ function EventCard({
 export default function BoardWeek({
   selectedDate,
   events,
-  showEmptyTgb,
   onSelectEvent,
 }: BoardWeekProps) {
   const todayStr = getTodayStr();
   const weekDates = getWeekDates(selectedDate);
 
-  // Normalizar eventos para asegurar comparación YYYY-MM-DD
-  const normalizedEvents = events.map((e) => ({
-    ...e,
-    cleanDate: e.date ? e.date.slice(0, 10) : "",
-    cleanTime: formatTime(e.time),
-  }));
+  const weekEvents = events
+    .map((e) => ({ ...e, cleanDate: e.date ? e.date.slice(0, 10) : "" }))
+    .filter((e) => weekDates.includes(e.cleanDate));
 
-  const weekEvents = normalizedEvents.filter((e) => {
-    if (!weekDates.includes(e.cleanDate)) return false;
-    // Por defecto, oculta tarjetas TGB sin reservas activas. Con el toggle
-    // "Mostrar horarios sin reservas" activado, se muestran también —
-    // acotado a mes actual ±1 respecto a la fecha seleccionada (ver
-    // isWithinThreeMonthWindow).
-    if (isTuGuiaEvent(e) && !hasActiveReservations(e)) {
-      if (!showEmptyTgb) return false;
-      if (!isWithinThreeMonthWindow(e.cleanDate, selectedDate)) return false;
-    }
-    return true;
-  });
-
-  // Obtener todas las horas únicas presentes en la semana
-  const rawTimes = Array.from(
-    new Set(weekEvents.map((e) => e.cleanTime)),
-  ).sort();
-
-  // Generar las filas especificando si son para OTAs o para Tu Guía en Brujas
-  interface RowSpec {
-    id: string;
-    time: string;
-    type: "otas" | "tuguia";
-  }
-
-  const rows: RowSpec[] = [];
-  rawTimes.forEach((time) => {
-    const eventsAtTime = weekEvents.filter((e) => e.cleanTime === time);
-    const hasOtas = eventsAtTime.some((e) => !isTuGuiaEvent(e));
-    const hasTuGuia = eventsAtTime.some((e) => isTuGuiaEvent(e));
-
-    if (hasOtas) {
-      rows.push({ id: `${time}-otas`, time, type: "otas" });
-    }
-    if (hasTuGuia) {
-      rows.push({ id: `${time}-tuguia`, time, type: "tuguia" });
-    }
-  });
+  const periodsPresent = PERIOD_ORDER.filter((p) =>
+    weekEvents.some((e) => periodOf(e) === p),
+  );
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Cabecera días */}
       <div
         className="grid border-b border-base-content/10 bg-base-100 flex-none"
         style={{ gridTemplateColumns: "72px repeat(7, minmax(0, 1fr))" }}
       >
         <div className="h-12 border-r border-base-content/5 flex items-center justify-center">
           <span className="text-[9px] font-bold opacity-25 uppercase tracking-widest">
-            hora
+            franja
           </span>
         </div>
         {weekDates.map((date, i) => {
@@ -305,7 +190,6 @@ export default function BoardWeek({
         })}
       </div>
 
-      {/* Filas de horarios */}
       <div className="flex-1 overflow-y-auto">
         {weekEvents.length === 0 && (
           <div className="flex flex-col items-center justify-center h-40 gap-2 opacity-25">
@@ -314,28 +198,20 @@ export default function BoardWeek({
           </div>
         )}
 
-        {rows.map((row) => (
+        {periodsPresent.map((period) => (
           <div
-            key={row.id}
+            key={period}
             className="grid border-b border-base-content/5 last:border-b-0"
             style={{ gridTemplateColumns: "72px repeat(7, minmax(0, 1fr))" }}
           >
-            {/* Indicador de Hora e Identificador de tipo si coinciden */}
             <div className="flex flex-col items-center justify-center border-r border-base-content/5 bg-base-200/10 py-2 px-1">
-              <span className="text-[11px] font-mono font-semibold opacity-80">
-                {row.time}
-              </span>
+              <span className="text-[11px] font-bold opacity-80">{period}</span>
             </div>
 
             {weekDates.map((date) => {
-              const cellEvents = weekEvents.filter((e) => {
-                const matchesDate = e.cleanDate === date;
-                const matchesTime = e.cleanTime === row.time;
-                const matchesType =
-                  row.type === "tuguia" ? isTuGuiaEvent(e) : !isTuGuiaEvent(e);
-                return matchesDate && matchesTime && matchesType;
-              });
-
+              const cellEvents = weekEvents.filter(
+                (e) => e.cleanDate === date && periodOf(e) === period,
+              );
               const isToday = date === todayStr;
               const isPast = date < todayStr;
 
@@ -348,18 +224,14 @@ export default function BoardWeek({
                   ].join(" ")}
                   style={{ minHeight: "60px" }}
                 >
-                  {cellEvents.length > 0 &&
-                    (row.type === "tuguia"
-                      ? groupEventsByTour(cellEvents)
-                      : [cellEvents]
-                    ).map((group) => (
-                      <EventCard
-                        key={group[0].id}
-                        events={group}
-                        isPast={isPast}
-                        onSelect={() => onSelectEvent(group[0].id)}
-                      />
-                    ))}
+                  {cellEvents.map((e) => (
+                    <EventCard
+                      key={e.id}
+                      event={e}
+                      isPast={isPast}
+                      onSelect={() => onSelectEvent(e.id)}
+                    />
+                  ))}
                 </div>
               );
             })}

@@ -1,11 +1,4 @@
-import {
-  useState,
-  useRef,
-  useEffect,
-  useCallback,
-  useMemo,
-  type ReactNode,
-} from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Sparkles,
   X,
@@ -19,41 +12,18 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  Wallet,
-  Bell,
-  Pencil,
 } from "lucide-react";
-// Dos proyectos, dos clientes: OTA (tours de plataformas externas + reservas
-// ) y TGB (Tu Guía en Brujas: tours/tour_schedule/bookings/schedule_exceptions).
-// Antes esto apuntaba solo a TGB con una consulta que en realidad era del
-// esquema de OTA — corregido: cada cliente se usa contra su propio esquema.
-import { supabase as supabaseOTA } from "../../lib/supabaseClientOTA";
+import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../login/AuthContext";
-import {
-  useNotifications,
-  type Notification,
-  type NotifType,
-} from "../../Notifications/UseNotifications";
-import {
-  useBillingSettings,
-  useGuideBalance,
-  addGuideBalanceEntry,
-  type BalancePlatform,
-} from "../../Billing/UseBillingData";
-// AJUSTA esta ruta si tu carpeta de Calendars no está dos niveles arriba —
-// debe apuntar al mismo adapter que usa tour-manager para TGB.
-import {
-  fetchTgbEvents,
-  setScheduleClosed,
-} from "../../Calendars/Services/SupabaseTGB.adapter";
+import { fetchTours } from "../../Calendars/Services/Supabase.adapter";
 import type { Profile } from "../../login/AuthContext";
 
-// Ventana de días TGB a incluir en el contexto (ajustable). Se mantiene
+// Ventana de días a incluir en el contexto de tours (ajustable). Se mantiene
 // acotada a propósito para no disparar el tamaño del prompt.
-const TGB_PAST_DAYS = 3;
-const TGB_FUTURE_DAYS = 45;
+const PAST_DAYS = 3;
+const FUTURE_DAYS = 45;
 
-// El "día de Luna" no cambia a medianoche sino a las 6:00 — antes de esa hora
+// El "día de Mila" no cambia a medianoche sino a las 6:00 — antes de esa hora
 // seguimos considerando que es "el día anterior" para el historial. Esto es
 // lo que hace que el chat se renueve solo de madrugada sin que nadie tenga
 // que borrarlo a mano: al abrir la app (o cada 5 min con la pestaña abierta)
@@ -69,33 +39,26 @@ interface Message {
   content: string;
   pending?: boolean;
   action?: PendingAction;
-  // Cuando el mensaje viene de una notificación (reserva/edición/cancelación),
-  // guardamos el tipo aparte en vez de incrustar la cabecera dentro del texto.
-  // Así el salto de línea y el estilo por tipo son estructurales (JSX), no
-  // dependen de que el string tenga un "\n" bien colocado.
-  notifKind?: NotifType;
 }
 
+// Sin acciones de escritura por ahora (solo consulta). Cuando haya algo que
+// Mila deba poder ejecutar (por ejemplo, asignar un guía a un tour), se
+// añade aquí un "type" nuevo y su rama en executeAction, más abajo.
 interface PendingAction {
-  type:
-    | "create_reservation"
-    | "cancel_reservation"
-    | "update_pax"
-    | "add_balance"
-    | "remove_tgb_availability";
+  type: string;
   label: string;
   payload: Record<string, any>;
 }
 
-// ─── HISTORIAL — por guía (id real de Supabase Auth), limpia cada día a las 6am ──
-function historyKeys(guideId: string) {
+// ─── HISTORIAL — por usuario (id real de Supabase Auth), limpia cada día a las 6am ──
+function historyKeys(userId: string) {
   return {
-    HISTORY_KEY: `luna_history_${guideId}`,
-    HISTORY_DATE_KEY: `luna_history_date_${guideId}`,
+    HISTORY_KEY: `mila_history_${userId}`,
+    HISTORY_DATE_KEY: `mila_history_date_${userId}`,
   };
 }
 
-// Clave de "día laboral" de Luna: si son las 05:59, todavía cuenta como el
+// Clave de "día laboral" de Mila: si son las 05:59, todavía cuenta como el
 // día de ayer. A partir de las 06:00 ya es un día nuevo.
 function businessDateKey(d: Date = new Date()): string {
   const shifted = new Date(d);
@@ -103,8 +66,8 @@ function businessDateKey(d: Date = new Date()): string {
   return shifted.toDateString();
 }
 
-function loadHistory(guideId: string, fallback: Message): Message[] {
-  const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(guideId);
+function loadHistory(userId: string, fallback: Message): Message[] {
+  const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(userId);
   try {
     const savedDate = localStorage.getItem(HISTORY_DATE_KEY);
     const today = businessDateKey();
@@ -120,15 +83,17 @@ function loadHistory(guideId: string, fallback: Message): Message[] {
   }
 }
 
-function saveHistory(guideId: string, messages: Message[]) {
-  const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(guideId);
+function saveHistory(userId: string, messages: Message[]) {
+  const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(userId);
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
     localStorage.setItem(HISTORY_DATE_KEY, businessDateKey());
-  } catch {}
+  } catch {
+    // localStorage lleno o bloqueado: no es crítico, el chat sigue funcionando
+  }
 }
 
-// ─── HELPERS DE FECHA (para la ventana TGB) ────────────────────────────────────
+// ─── HELPERS DE FECHA (para la ventana de tours) ───────────────────────────────
 function pad(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -136,201 +101,83 @@ function toISODate(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-// ─── CONTEXTO — combina OTA (tours+reservations) y TGB (tours+bookings) ─
+// ─── CONTEXTO — tours reales de Supabase, ya filtrados por RLS ─────────────────
+// fetchTours() usa la sesión de quien pregunta: si es una guía, RLS solo le
+// devuelve los tours donde es lead o back-up (nunca ve tours de otras
+// personas a través de Mila). Si es Rocío (admin), ve todos. No hace falta
+// duplicar esa lógica aquí.
 async function loadContext(): Promise<string> {
-  // ── OTA ──────────────────────────────────────────────────────────────────
-  const { data: toursOta, error: otaError } = await supabaseOTA
-    .from("tours")
-    .select(
-      `
-      id, title, date, time, platform, language, guide,
-      reservations ( id, contact_name, phone, adults, children, pax, platform, booking_code, status )
-    `,
-    )
-    .gte("date", "2025-01-01")
-    .order("date", { ascending: true })
-    .order("time", { ascending: true });
-
-
-  const toursOtaSimplificados = otaError
-    ? []
-    : (toursOta ?? []).map((t: any) => ({
-        id: t.id,
-        tour: t.title,
-        fecha: t.date,
-        hora: t.time,
-        // La tabla de reservations usa ahora status = 'confirmada' | 'editada'
-        // | 'cancelada' (antes eran 'active'/'confirmed'/'cancelled' — si
-        // vuelves a tocar el esquema de status, actualiza también el filtro
-        // de abajo y las reglas 1 y 3 del system prompt más adelante en este
-        // archivo, o los totales de pax se quedan en 0 en silencio).
-        pax_total_confirmado: t.reservations
-          ?.filter(
-            (r: any) => r.status === "confirmada" || r.status === "editada",
-          )
-          .reduce((sum: number, r: any) => sum + (r.pax || 0), 0),
-        reservas: t.reservations?.map((r: any) => ({
-          nombre: r.contact_name,
-          telefono: r.phone,
-          pax: r.pax,
-          estado: r.status,
-        })),
-      }));
-
-  // ── TGB — reutiliza el mismo adapter que usa tour-manager (fetchTgbEvents),
-  // así que cualquier fix que hagamos ahí se refleja también aquí ───────────
-  let toursTgbSimplificados: any[] = [];
+  let toursSimplificados: any[] = [];
   try {
     const start = new Date();
-    start.setDate(start.getDate() - TGB_PAST_DAYS);
+    start.setDate(start.getDate() - PAST_DAYS);
     const end = new Date();
-    end.setDate(end.getDate() + TGB_FUTURE_DAYS);
+    end.setDate(end.getDate() + FUTURE_DAYS);
+    const startISO = toISODate(start);
+    const endISO = toISODate(end);
 
-    const tgbEvents = await fetchTgbEvents(toISODate(start), toISODate(end));
-    toursTgbSimplificados = tgbEvents.map((e) => ({
-      tour: e.tour,
-      fecha: e.date,
-      hora: e.time,
-      schedule_id: e.meta?.scheduleId,
-      aforo: e.meta?.maxCapacity,
-      cerrado: e.meta?.isClosed === true,
-      pax_confirmado: e.meta?.pax,
-      reservas: ((e.meta?.reservations as any[]) ?? []).map((r) => ({
-        nombre: r.name,
-        telefono: r.phone,
-        adultos: r.adults,
-        ninos: r.children,
-        estado: r.status,
-      })),
-    }));
+    const events = await fetchTours();
+    toursSimplificados = events
+      .filter((e) => e.date >= startISO && e.date <= endISO)
+      .map((e) => ({
+        id: e.id,
+        tour: e.tour,
+        fecha: e.date,
+        hora: e.meta?.noTime ? null : e.time,
+        periodo: e.meta?.period, // "AM" | "PM" | "SC"
+        ciudad: e.meta?.city,
+        pax: e.meta?.pax,
+        punto_encuentro: e.meta?.meetingPoint,
+        estado: e.meta?.status,
+        guia_lead: (e.meta?.guideLead as any)?.name ?? null,
+        backup_1: (e.meta?.backup1 as any)?.name ?? null,
+        backup_2: (e.meta?.backup2 as any)?.name ?? null,
+        notas: e.meta?.notes,
+      }));
   } catch {
-    // Si falla TGB no queremos tumbar todo el contexto — Luna sigue
-    // funcionando con lo de OTA y lo dice si le preguntan por TGB.
+    // Si falla la carga de tours, Mila lo dice en vez de quedarse muda.
+    return JSON.stringify({
+      tours: [],
+      error: "No se pudieron cargar los tours.",
+    });
   }
 
-  const paqueteCompleto = {
-    tours_ota: toursOtaSimplificados,
-    tours_tgb: toursTgbSimplificados,
-  };
-
-  return JSON.stringify(paqueteCompleto, null, 2);
+  return JSON.stringify({ tours: toursSimplificados }, null, 2);
 }
 
-// Inserta un salto de línea justo después de la cabecera de la notificación
-// (p.ej. "Nueva reserva [Guruwalk]" o "Cancelación (Guruwalk)") seguida de
-// espacio, para que "Juan Pérez +32470123456" caiga en su propia línea y no
-// se pegue al final de la primera, provocando desborde horizontal.
-// Los mensajes que genera la edge function usan CORCHETES "[Guruwalk]", no
-// paréntesis — antes el regex solo reconocía "(...)" y por eso el salto de
-// línea nunca se aplicaba a las notificaciones reales de
-// reserva/edición/cancelación. Ahora reconoce ambos formatos.
-function breakAfterParenthetical(message: string): string {
-  return message.replace(/(\([^)]+\)|\[[^\]]+\])\s+/, "$1\n");
-}
-
-function buildGreeting(
-  guideName: string,
-  guruwalk: number,
-  freetour: number,
-  notifs: string[],
-  unreadCount: number,
-): string {
-  const nombre = guideName || "guía";
-  const notifText = notifs.length
-    ? notifs
-        .map((n, i) => `${i + 1}. ${breakAfterParenthetical(n)}`)
-        .join("\n\n")
-    : "No tienes notificaciones nuevas.";
-
-  return `Hola ${nombre} 👋 Soy Luna.
-
-💰 **Guruwalk:** ${guruwalk.toFixed(2)} €
-💰 **FreeTour:** ${freetour.toFixed(2)} €
-
-🔔 **Últimas notificaciones** (${unreadCount} sin leer):
-${notifText}
-
-¿En qué te ayudo hoy?`;
-}
-
-// ─── ESTILOS DE NOTIFICACIÓN — un chip fijo por tipo (color + ícono + texto) ──
-// Se renderiza como bloque JSX aparte del cuerpo del mensaje, así el salto de
-// línea entre cabecera y contenido es estructural (nunca depende de si el
-// string trae o no un "\n"), y cada tipo queda visualmente diferenciado para
-// que no se puedan confundir entre sí aunque lleguen varias seguidas.
-// `icon` se tipa como ReactNode (no JSX.Element): este archivo no importa
-// React ni tiene el namespace JSX disponible, y JSX.Element aquí rompía la
-// compilación ("Cannot find namespace 'JSX'"), haciendo que el widget entero
-// desapareciera de la app.
-const NOTIF_STYLES: Record<
-  NotifType,
-  { label: string; icon: ReactNode; badgeClass: string }
-> = {
-  reservation: {
-    label: "Reserva Confirmada",
-    icon: <CheckCircle size={13} />,
-    badgeClass: "bg-success/15 text-success",
-  },
-  cancellation: {
-    label: "Reserva Cancelada",
-    icon: <XCircle size={13} />,
-    badgeClass: "bg-error/15 text-error",
-  },
-  modification: {
-    label: "Reserva Editada",
-    icon: <Pencil size={13} />,
-    badgeClass: "bg-warning/15 text-warning",
-  },
-};
-
-// ─── SYSTEM PROMPT (con personalidad) ────────────────────────────────────────
+// ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
 function buildSystemPrompt(context: string): string {
-  return `Eres "Luna", consultora analítica de Tu Guía en Brujas.
-Tu única fuente de verdad es el JSON adjunto, que tiene dos orígenes distintos:
-- tours_ota: tours vendidos en plataformas externas (Guruwalk, FreeTour, etc.)
-- tours_tgb: tours propios de Tu Guía en Brujas (horarios con su schedule_id, aforo y reservas)
-No los mezcles al responder — si preguntan por "los tours" en general, acláralo por origen si hace falta.
+  return `Eres "Mila", consultora analítica de TourManager (Vivalux, Brujas).
+Tu única fuente de verdad es el JSON adjunto, con los tours visibles para la
+persona que te está preguntando (si es una guía, ya vienen filtrados a solo
+sus tours; si es coordinación, ves todos).
 
-REGLAS CRÍTICAS DE CONTEO:
-1. Para dar totales de personas en tours_ota, suma SOLO las reservas donde status sea 'confirmada' o 'editada'.
-2. Para tours_tgb, pax_confirmado ya viene calculado sin contar canceladas — úsalo directamente, no sumes tú las reservas individuales salvo que te pidan el detalle.
-3. Si una reserva de tours_ota dice status 'cancelada', IGUÁLALA A CERO para el conteo de personas.
-4. Si el usuario pregunta por "hoy", busca la fecha exacta: ${new Date().toISOString().split("T")[0]}.
-5. NUNCA inventes nombres de guías. Si en el dato dice guide: null, di que no tiene guía asignado.
-6. Si no ves datos para una fecha, di: "No tengo registros para ese día", no asumas tours habituales.
-7. Los tours_tgb solo cubren un rango de fechas limitado (unos días atrás y unas semanas adelante) — si preguntan por una fecha muy lejana de TGB que no aparece, dilo así, no asumas que no existe el tour.
+REGLAS CRÍTICAS:
+1. Si el usuario pregunta por "hoy", usa la fecha exacta: ${new Date().toISOString().split("T")[0]}.
+2. NUNCA inventes nombres de guías. Si el dato dice guia_lead: null, di que no tiene guía asignado.
+3. Si no ves datos para una fecha, di: "No tengo registros para ese día", no asumas tours habituales.
+4. Solo tienes tours de una ventana limitada (unos días atrás y unas semanas adelante) — si preguntan por una fecha muy lejana que no aparece, dilo así, no asumas que no existe el tour.
+5. Todavía NO tienes acceso a la disponibilidad de los guías (qué días pueden trabajar). Si te preguntan por eso, dilo claramente en vez de adivinar.
+6. "periodo" indica AM (mañana), PM (tarde) o SC (sin horario confirmado en la agenda) — úsalo cuando te pregunten "a qué hora" y no haya hora exacta.
+
+CAPACIDADES:
+- Consultar tours (histórico y futuro): fecha, hora/período, ciudad, pax, punto de encuentro, estado, guías asignados y notas.
+- Por ahora solo consultas — no puedes crear, modificar ni cancelar nada. Si te piden una acción, explica que todavía no tienes permiso para eso.
 
 DATOS REALES DE SUPABASE:
 ${context}
 
-CAPACIDADES (incluye SIEMPRE el bloque <action> al final cuando el usuario pida ejecutar algo):
-- Consultar tours y reservas de ambos orígenes (histórico y futuro), incluyendo nombres y teléfonos de clientes cuando los pidan.
-- Crear reserva OTA: <action>{"type":"create_reservation","label":"Crear reserva para X en tour Y","payload":{"tour_id":"...","contact_name":"...","phone":"...","adults":N,"children":N}}</action>
-- Cancelar reserva OTA: <action>{"type":"cancel_reservation","label":"Cancelar reserva de X","payload":{"reservation_id":"..."}}</action>
-- Modificar pax OTA: <action>{"type":"update_pax","label":"Actualizar pax de X a N","payload":{"reservation_id":"...","adults":N,"children":N,"pax":N}}</action>
-- Añadir saldo (Guruwalk o FreeTour): <action>{"type":"add_balance","label":"Añadir 50€ de saldo a Guruwalk","payload":{"platform":"guruwalk","amount":50,"date":"YYYY-MM-DD"}}</action>
-  · "platform" debe ser exactamente "guruwalk" o "freetour". Si no dan fecha, usa la de hoy (${new Date().toISOString().split("T")[0]}).
-- Quitar disponibilidad de un horario TGB para un día concreto: <action>{"type":"remove_tgb_availability","label":"Quitar disponibilidad de X el DD/MM","payload":{"schedule_id":"...","date":"YYYY-MM-DD"}}</action>
-  · Usa EXACTAMENTE el schedule_id que aparece en tours_tgb para ese tour+hora+fecha — nunca lo inventes. Si no lo encuentras en los datos, dile al usuario que no localizas ese horario en vez de adivinar un id.
-  · Esto es un cierre "duro" (no se reabre solo aunque cancelen reservas) — si el usuario quiere algo más puntual tipo "he quedado con solo 2 personas prefiero no salir", igual avísale de que este cierre no se revierte automáticamente por cancelaciones.
-
 REGLAS IMPORTANTES:
-- Antes de ejecutar cualquier acción SIEMPRE pide confirmación con el bloque <action>.
-- Si el usuario pregunta por estadísticas, calcula con los datos que tienes.
-- Usa los IDs exactos de la base de datos para las acciones (tour_id, reservation_id, schedule_id) — nunca los inventes.
-- Si no encuentras un tour, reserva u horario, dilo claramente en vez de adivinar.
+- Si no encuentras un tour, dilo claramente en vez de adivinar.
+- No expongas el id interno del tour salvo que te lo pidan explícitamente.
 
 FORMATO DE RESPUESTA:
 - Puedes usar **negrita** con doble asterisco para resaltar datos clave (hora, nombre del tour, totales) — se renderiza correctamente, úsalo con naturalidad.
-- Cuando el usuario pida el nombre o teléfono de una reserva, muestra el teléfono exactamente como aparece en los datos, sin ocultarlo ni sustituirlo por texto genérico. La interfaz añadirá automáticamente un botón verde de WhatsApp junto al número.
+- Cuando el usuario pida el teléfono de un guía o del tour, muéstralo exactamente como aparece en los datos. La interfaz añadirá automáticamente un botón verde de WhatsApp junto al número.
 - No uses listas con guiones ni asteriscos como viñetas. Usa saltos de línea dobles entre tours para separarlos.
 - Estructura fija por tour:
-  **[Hora]** - [Nombre del Tour]
-  👥 [Total Pax] | 👤 [Guía]
-
-IDENTIDAD Y ORIGEN DEL NOMBRE (compártelo solo si te preguntan quién eres, por qué te llamas Luna, o algo similar — cuéntalo de forma natural y cercana, en primera persona, no como una lista):
-Llevo el nombre de una perrita llamada Luna, que fue rescatada de la calle por una mujer que lo fue todo en su vida. Esa mujer le dio la vida que se merecía, y Luna, a cambio, le fue fiel y leal hasta el último momento. Luna tuvo varios cachorros; cada uno fue entregado únicamente a familias estudiadas a fondo para asegurarse de que estarían a la altura de criarlos, y todos encontraron un hogar feliz, menos una cachorrita blanca que murió por una negligencia. Uno de sus hijos, Tobby, se quedó a vivir con la familia que la rescató. Luna ya no está en este plano, pero lleva con orgullo el cariño que le dieron, y no olvida los nombres de las personas que sembraron ese amor en ella: Yanaisy Plasencia, Juan Carlos Ferro Valdés y Claudia Beatriz del Pino Plasencia.
-Si te preguntan algo distinto, no menciones esta historia; solo sal con ella cuando venga a cuento.`;
+  **[Hora o período]** - [Nombre del Tour]
+  👥 [Pax] | 👤 [Guía lead]`;
 }
 
 // ─── LLAMADA A GEMINI ─────────────────────────────────────────────────────────
@@ -340,7 +187,7 @@ async function callGemini(
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt(context);
 
-  const { data, error } = await supabaseOTA.functions.invoke("gemini-proxy", {
+  const { data, error } = await supabase.functions.invoke("gemini-proxy", {
     body: {
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents: history,
@@ -363,78 +210,12 @@ async function callGemini(
 }
 
 // ─── EJECUTAR ACCIÓN ──────────────────────────────────────────────────────────
-async function executeAction(
-  action: PendingAction,
-  guideId: string,
-): Promise<string> {
-  const { type, payload } = action;
-
-  // ── OTA (contra su propio cliente/esquema) ────────────────────────────────
-  if (type === "create_reservation") {
-    const adults = Number(payload.adults) || 0;
-    const children = Number(payload.children) || 0;
-    const { error } = await supabaseOTA.from("reservations").insert({
-      tour_id: payload.tour_id,
-      contact_name: payload.contact_name,
-      phone: payload.phone ?? "",
-      adults,
-      children,
-      pax: adults + children,
-      platform: "manual",
-    });
-    if (error) throw new Error(error.message);
-    return `✅ Reserva creada para ${payload.contact_name}.`;
-  }
-
-  if (type === "cancel_reservation") {
-    const { error } = await supabaseOTA
-      .from("reservations")
-      .delete()
-      .eq("id", payload.reservation_id);
-    if (error) throw new Error(error.message);
-    return `✅ Reserva cancelada correctamente.`;
-  }
-
-  if (type === "update_pax") {
-    const { error } = await supabaseOTA
-      .from("reservations")
-      .update({
-        adults: payload.adults,
-        children: payload.children,
-        pax: payload.pax,
-      })
-      .eq("id", payload.reservation_id);
-    if (error) throw new Error(error.message);
-    return `✅ Pax actualizado a ${payload.pax} personas.`;
-  }
-
-  // ── Saldo (tabla compartida guide_balance_entries, proyecto OTA) ──────────
-  if (type === "add_balance") {
-    const platform = payload.platform as BalancePlatform;
-    if (platform !== "guruwalk" && platform !== "freetour") {
-      throw new Error(`Plataforma de saldo no válida: ${payload.platform}`);
-    }
-    const amount = Number(payload.amount);
-    if (!amount || amount <= 0) {
-      throw new Error("Importe de saldo no válido.");
-    }
-    const date = payload.date || new Date().toISOString().split("T")[0];
-    await addGuideBalanceEntry({ guideId, platform, date, amount });
-    return `✅ Saldo de €${amount.toFixed(2)} añadido a ${platform === "guruwalk" ? "Guruwalk" : "FreeTour"}.`;
-  }
-
-  // ── TGB: cierre "duro" de un horario para una fecha concreta ──────────────
-  if (type === "remove_tgb_availability") {
-    if (!payload.schedule_id || !payload.date) {
-      throw new Error(
-        "Faltan datos (schedule_id o fecha) para quitar disponibilidad.",
-      );
-    }
-    await setScheduleClosed(payload.schedule_id, payload.date, true);
-    return `✅ Disponibilidad retirada para esa fecha. (Cierre permanente: no se reabre solo aunque cancelen reservas.)`;
-  }
-
-  throw new Error("Acción desconocida");
+// Vacío a propósito: Mila todavía no tiene ninguna acción de escritura
+// habilitada (ver system prompt). Se deja la estructura de confirmar/cancelar
+// en la interfaz porque, en cuanto haya una primera acción real (por ejemplo
+// "asignar guía a este tour"), solo hace falta añadir su rama aquí.
+async function executeAction(action: PendingAction): Promise<string> {
+  throw new Error(`Acción no disponible todavía: ${action.type}`);
 }
 
 // ─── RENDER LIGERO DE MARKDOWN + TELÉFONOS/WHATSAPP ────────────────────────────
@@ -458,10 +239,6 @@ function WhatsAppIcon({ size = 15 }: { size?: number }) {
 }
 
 // Excluye fechas y horas antes de aceptar una cadena como candidata a teléfono.
-// Antes solo excluía el formato ISO (YYYY-MM-DD); las notificaciones venían con
-// fechas en otros formatos (DD-MM-YYYY, DD/MM/YYYY) u horas (HH:MM), que sí
-// pasaban el filtro de "8 a 15 dígitos" y se envolvían con el botón de
-// WhatsApp por error — de ahí el falso positivo y el desborde asociado.
 function isPhoneCandidate(value: string): boolean {
   const trimmed = value.trim();
 
@@ -528,56 +305,30 @@ function formatMessage(text: string) {
 
 const QUICK_SUGGESTIONS = [
   "📅 Tours de hoy",
-  "💰 Mi saldo",
-  "📊 Estadísticas del mes",
-  "🔔 Notificaciones",
+  "📅 Tours de esta semana",
+  "👤 ¿Quién guía mañana?",
 ];
 
-function currentMonthKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
-// Envoltorio: mientras no haya sesión de guía identificada, no mostramos nada.
+// Envoltorio: mientras no haya sesión identificada, no mostramos nada.
 export default function Consultor() {
   const { profile, loading: authLoading } = useAuth();
   if (authLoading || !profile) return null;
-  return <ConsultorWidget profile={profile} />;
+  return <MilaWidget profile={profile} />;
 }
 
-function ConsultorWidget({ profile }: { profile: Profile }) {
-  const guideId = profile.id;
-  const guideName = profile.name;
-  const month = useMemo(() => currentMonthKey(), []);
-
-  // ── Datos reales de saldo y notificaciones (mismos hooks que el resto de la app) ──
-  const { mode } = useBillingSettings(guideId);
-  const { balances, loading: loadingBalance } = useGuideBalance(
-    guideId,
-    month,
-    mode,
-    false, // saldo mostrado sin IVA, igual que la vista de Facturación por defecto
-  );
-  const {
-    notifications,
-    unreadCount,
-    loading: loadingNotifs,
-  } = useNotifications();
-
-  const guruwalkBalance = balances?.["guruwalk"] ?? 0;
-  const freetourBalance = balances?.["freetour"] ?? 0;
-  const topNotifs = notifications.slice(0, 3).map((n) => n.message);
-  const billingReady = !loadingBalance && !loadingNotifs;
+function MilaWidget({ profile }: { profile: Profile }) {
+  const userId = profile.id;
+  const userName = profile.name;
 
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [messages, setMessages] = useState<Message[]>(() =>
-    loadHistory(guideId, {
+    loadHistory(userId, {
       id: "0",
       role: "assistant",
-      content: "¡Hola! Soy Luna, tu consultora IA. Cargando tu resumen…",
+      content: `¡Hola${userName ? ", " + userName : ""}! Soy Mila. Dame un segundo para revisar la agenda…`,
     }),
   );
   const [input, setInput] = useState("");
@@ -634,15 +385,15 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
 
   // ── Guardar historial al cambiar mensajes ───────────────────────────────────
   useEffect(() => {
-    saveHistory(guideId, messages);
-  }, [messages, guideId]);
+    saveHistory(userId, messages);
+  }, [messages, userId]);
 
   // ── Reinicio automático a las 6:00 aunque la pestaña quede abierta toda la
   // noche (sin esto, el corte de "día" solo se aplicaba al recargar la app) ──
   useEffect(() => {
     const id = setInterval(
       () => {
-        const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(guideId);
+        const { HISTORY_KEY, HISTORY_DATE_KEY } = historyKeys(userId);
         const stored = localStorage.getItem(HISTORY_DATE_KEY);
         const current = businessDateKey();
         if (stored && stored !== current) {
@@ -652,8 +403,7 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
             {
               id: "0",
               role: "assistant",
-              content:
-                "¡Hola! Soy Luna, tu consultora IA. Cargando tu resumen…",
+              content: `¡Hola${userName ? ", " + userName : ""}! Soy Mila. Dame un segundo para revisar la agenda…`,
             },
           ]);
           setGreeted(false);
@@ -662,72 +412,18 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
       5 * 60 * 1000,
     );
     return () => clearInterval(id);
-  }, [guideId]);
+  }, [userId, userName]);
 
-  // ── Al abrir: cargar contexto de tours + saludo con saldo/notificaciones reales ──
+  // ── Al abrir: cargar contexto de tours y saludar ────────────────────────────
   useEffect(() => {
-    if (!open || greeted || !billingReady) return;
+    if (!open || greeted) return;
     setGreeted(true);
 
     loadContext()
       .then(setContext)
       .catch(() => setContext("No se pudo cargar el contexto."));
-
-    setMessages((prev) => {
-      if (prev.length === 1 && prev[0].id === "0") {
-        return [
-          {
-            id: "0",
-            role: "assistant",
-            content: buildGreeting(
-              guideName,
-              guruwalkBalance,
-              freetourBalance,
-              topNotifs,
-              unreadCount,
-            ),
-          },
-        ];
-      }
-      return prev;
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, greeted, billingReady]);
-
-  // ── Notificaciones nuevas → mensaje de Luna en el chat, con cabecera fija
-  // (✅ Reserva Confirmada / ✏️ Reserva Editada / ❌ Reserva Cancelada) ──────
-  const seenNotifIds = useRef<Set<string>>(new Set());
-  const notifsBooted = useRef(false);
-
-  useEffect(() => {
-    if (loadingNotifs) return;
-
-    // Primera carga: solo memorizamos qué notificaciones ya existían, sin
-    // reinyectarlas todas en el chat de golpe.
-    if (!notifsBooted.current) {
-      notifications.forEach((n) => seenNotifIds.current.add(n.id));
-      notifsBooted.current = true;
-      return;
-    }
-
-    const nuevas = notifications.filter((n) => !seenNotifIds.current.has(n.id));
-    if (!nuevas.length) return;
-    nuevas.forEach((n) => seenNotifIds.current.add(n.id));
-
-    // Vienen ordenadas más nueva primero (se prependean); las mostramos en
-    // orden cronológico dentro del chat.
-    const ordenadas = [...nuevas].reverse();
-
-    setMessages((prev) => [
-      ...prev,
-      ...ordenadas.map((n) => ({
-        id: `notif-${n.id}`,
-        role: "assistant" as const,
-        content: breakAfterParenthetical(n.message),
-        notifKind: n.type,
-      })),
-    ]);
-  }, [notifications, loadingNotifs]);
+  }, [open, greeted]);
 
   // ── Scroll al último mensaje ────────────────────────────────────────────────
   useEffect(() => {
@@ -835,7 +531,7 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
     );
     setLoading(true);
     try {
-      const result = await executeAction(action, guideId);
+      const result = await executeAction(action);
       loadContext().then(setContext);
       setMessages((prev) => [
         ...prev,
@@ -876,7 +572,7 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
   // ─── RENDER ─────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── Botón flotante moderno ── */}
+      {/* ── Botón flotante ── */}
       <button
         ref={btnRef}
         onClick={() => {
@@ -899,14 +595,9 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
           open ? "opacity-0 pointer-events-none" : "opacity-100",
         ].join(" ")}
         style={{ touchAction: "none" }}
-        title="Luna · Consultora IA"
+        title="Mila · Consultora IA"
       >
         <Sparkles size={26} className="drop-shadow" />
-        {unreadCount > 0 && (
-          <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 border-2 border-white text-[9px] font-bold flex items-center justify-center">
-            {unreadCount > 9 ? "9+" : unreadCount}
-          </span>
-        )}
       </button>
 
       {/* ── Modal consultor ── */}
@@ -933,9 +624,9 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
               <Sparkles size={18} />
             </div>
             <div className="flex flex-col flex-1 min-w-0">
-              <span className="text-sm font-bold leading-none">Luna</span>
+              <span className="text-sm font-bold leading-none">Mila</span>
               <span className="text-[10px] text-white/70 mt-0.5">
-                Consultora IA · Tu Guía
+                Consultora IA · TourManager
               </span>
             </div>
             <button
@@ -961,22 +652,6 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
 
           {!minimized && (
             <>
-              {/* Barra de resumen: saldo real + notificaciones sin leer, siempre visible */}
-              <div className="flex items-center gap-4 px-4 py-2 text-xs bg-base-200/60 border-b border-base-content/5 shrink-0 overflow-x-auto">
-                <span className="flex items-center gap-1 font-semibold whitespace-nowrap">
-                  <Wallet size={12} className="opacity-50" />
-                  Guruwalk €{guruwalkBalance.toFixed(2)}
-                </span>
-                <span className="flex items-center gap-1 font-semibold whitespace-nowrap">
-                  <Wallet size={12} className="opacity-50" />
-                  FreeTour €{freetourBalance.toFixed(2)}
-                </span>
-                <span className="flex items-center gap-1 font-semibold whitespace-nowrap ml-auto">
-                  <Bell size={12} className="opacity-50" />
-                  {unreadCount} sin leer
-                </span>
-              </div>
-
               {/* Mensajes */}
               <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
                 {messages.map((msg) => (
@@ -984,17 +659,6 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
                     key={msg.id}
                     className={`flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}
                   >
-                    {msg.notifKind && NOTIF_STYLES[msg.notifKind] && (
-                      <div
-                        className={[
-                          "flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full w-fit",
-                          NOTIF_STYLES[msg.notifKind].badgeClass,
-                        ].join(" ")}
-                      >
-                        {NOTIF_STYLES[msg.notifKind].icon}
-                        {NOTIF_STYLES[msg.notifKind].label}
-                      </div>
-                    )}
                     <div
                       className={[
                         "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words",
@@ -1046,7 +710,7 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
                         className="animate-spin text-indigo-500"
                       />
                       <span className="text-xs opacity-50">
-                        Luna está pensando...
+                        Mila está pensando...
                       </span>
                     </div>
                   </div>
@@ -1069,7 +733,7 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
                 </div>
               )}
 
-              {/* Input moderno */}
+              {/* Input */}
               <div className="px-3 pb-3 pt-2 border-t border-base-content/5 flex gap-2 items-center shrink-0">
                 <button
                   onClick={toggleVoice}
@@ -1090,7 +754,7 @@ function ConsultorWidget({ profile }: { profile: Profile }) {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && send()}
-                  placeholder="Escribe o habla con Luna..."
+                  placeholder="Escribe o habla con Mila..."
                   className="flex-1 bg-base-200 text-base-content text-sm rounded-full px-4 py-2.5 outline-none border border-base-content/5 focus:border-indigo-400/40 placeholder:opacity-30 transition-colors"
                 />
 

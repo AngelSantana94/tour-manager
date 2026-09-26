@@ -1,156 +1,120 @@
-import { useState, useEffect } from "react";
-import { Trash2 } from "lucide-react";
-import { supabase } from "../lib/supabaseClientOTA";
-import { useAuth } from "../login/AuthContext";
+import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
+import { supabase } from "../lib/supabaseClient";
+import GuideButton from "./GuideButton";
+import GuideDetailView from "./GuideDetailView";
 
-interface Profile {
+interface Guide {
   id: string;
   name: string;
-  email: string;
-  role: string;
-  avatar_url: string | null;
-  created_at: string;
+  email: string | null;
+  city: string | null;
+  languages: string[] | null;
+  phone: string | null;
+  fixed_days: string[] | null;
+  notes: string | null;
+  user_id: string | null;
+  created_at: string | null;
 }
 
-// ─── AVATAR ───────────────────────────────────────────────────────────────────
-const AVATAR_COLORS = [
-  "bg-teal-600",
-  "bg-blue-600",
-  "bg-violet-600",
-  "bg-amber-600",
-  "bg-rose-600",
-  "bg-emerald-600",
-];
-
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
+interface GuidesViewProps {
+  onSelectGuide?: (id: string) => void;
 }
 
-function avatarColor(index: number) {
-  return AVATAR_COLORS[index % AVATAR_COLORS.length];
-}
-
-// ─── CARD GUÍA ────────────────────────────────────────────────────────────────
-function GuideCard({
-  guide,
-  index,
-  isAdmin,
-  onDelete,
-}: {
-  guide: Profile;
-  index: number;
-  isAdmin: boolean;
-  onDelete: (id: string) => void;
-}) {
-  return (
-    <div className="relative bg-base-100 border border-base-content/10 rounded-2xl p-5 flex items-center gap-4 hover:shadow-sm transition-shadow">
-      {/* Botón eliminar — solo admin, arriba derecha */}
-      {isAdmin && (
-        <button
-          onClick={() => {
-            if (
-              confirm(
-                `¿Eliminar a ${guide.name}? Esta acción no se puede deshacer.`,
-              )
-            ) {
-              onDelete(guide.id);
-            }
-          }}
-          className="absolute top-3 right-3 btn btn-ghost btn-circle btn-xs text-base-content/20 hover:text-error hover:bg-error/10 transition-colors"
-          title="Eliminar guía"
-        >
-          <Trash2 size={13} />
-        </button>
-      )}
-
-      {/* Avatar */}
-      {guide.avatar_url ? (
-        <img
-          src={guide.avatar_url}
-          alt={guide.name}
-          className="w-12 h-12 rounded-full object-cover shrink-0 border-2 border-base-content/10"
-        />
-      ) : (
-        <div
-          className={[
-            "w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0",
-            avatarColor(index),
-          ].join(" ")}
-        >
-          {getInitials(guide.name)}
-        </div>
-      )}
-
-      {/* Info */}
-      <div className="flex flex-col min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-base-content truncate">
-            {guide.name}
-          </span>
-          {guide.role === "admin" && (
-            <span className="text-[9px] font-bold uppercase tracking-widest bg-primary/10 text-primary px-1.5 py-0.5 rounded-full shrink-0">
-              Admin
-            </span>
-          )}
-        </div>
-        <span className="text-xs opacity-40 truncate mt-0.5">
-          {guide.email}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
-export default function GuidesView() {
-  const { isAdmin } = useAuth();
-  const [guides, setGuides] = useState<Profile[]>([]);
+export default function GuidesView({ onSelectGuide }: GuidesViewProps) {
+  // 1. Estado DENTRO del componente
+  const [selectedGuideId, setSelectedGuideId] = useState<string | null>(null);
+  const [guides, setGuides] = useState<Guide[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from("profiles")
+    const fetchGuides = async () => {
+      setLoading(true);
+      setError(null);
+
+      const { data, error } = await supabase
+        .from("guides")
         .select("*")
         .order("created_at", { ascending: true });
-      setGuides((data as Profile[]) ?? []);
+
+      if (error) {
+        console.error("Error cargando guías:", error);
+        setError("No se pudieron cargar las guías.");
+        setGuides([]);
+      } else {
+        setGuides((data as Guide[]) ?? []);
+      }
+
       setLoading(false);
-    })();
+    };
+
+    fetchGuides();
   }, []);
 
-  const handleDelete = async (id: string) => {
-    // Eliminar de la lista optimistamente
-    setGuides((prev) => prev.filter((g) => g.id !== id));
-    // Eliminar de Supabase Auth (requiere service role — por ahora solo BD)
-    await supabase.from("profiles").delete().eq("id", id);
+  // Manejador del click en la tarjeta
+  const handleSelectGuide = (id: string) => {
+    setSelectedGuideId(id);
+    if (onSelectGuide) {
+      onSelectGuide(id);
+    }
   };
 
-  if (loading)
+  // 2. Muestra la vista de detalle cuando hay un ID seleccionado
+  if (selectedGuideId) {
+    return (
+      <GuideDetailView
+        guideId={selectedGuideId}
+        onBack={() => setSelectedGuideId(null)}
+      />
+    );
+  }
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64 gap-3 opacity-30">
         <span className="loading loading-spinner loading-sm" />
         <span className="text-sm">Cargando guías...</span>
       </div>
     );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-sm text-error">{error}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-black text-base-content tracking-tight">
-          Guías
-        </h1>
-        <p className="text-xs opacity-40 mt-0.5">
-          {guides.length} guía{guides.length !== 1 ? "s" : ""} registrada
-          {guides.length !== 1 ? "s" : ""}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-base-content tracking-tight">
+            Guías
+          </h1>
+
+          <p className="text-xs opacity-40 mt-0.5">
+            {guides.length} guía{guides.length !== 1 ? "s" : ""} registrada
+            {guides.length !== 1 ? "s" : ""}
+          </p>
+        </div>
+
+        {/* Preparado para la siguiente fase */}
+        <button
+          type="button"
+          disabled
+          className="btn btn-primary btn-sm gap-2"
+          title="Disponible en la siguiente fase"
+        >
+          <Plus size={16} />
+          Añadir nuevo guía
+        </button>
       </div>
 
-      {/* Grid de cards */}
+      {/* Lista */}
       {guides.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 gap-2 opacity-20">
           <span className="text-4xl">👤</span>
@@ -158,13 +122,14 @@ export default function GuidesView() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {guides.map((guide, i) => (
-            <GuideCard
+          {guides.map((guide, index) => (
+            <GuideButton
               key={guide.id}
-              guide={guide}
-              index={i}
-              isAdmin={isAdmin}
-              onDelete={handleDelete}
+              id={guide.id}
+              name={guide.name}
+              email={guide.email}
+              index={index}
+              onClick={handleSelectGuide}
             />
           ))}
         </div>

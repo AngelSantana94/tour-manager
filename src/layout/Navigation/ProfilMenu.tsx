@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Pencil,
   KeyRound,
@@ -9,18 +9,10 @@ import {
   Moon,
   Monitor,
 } from "lucide-react";
-import { supabase } from "../../lib/supabaseClientOTA";
+import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../login/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactDOM from "react-dom";
-
-// Importación del modal de añadir saldo y del hook de balance
-import AddBalanceModal from "../../Billing/AddBalanceModal";
-import {
-  useGuideBalance,
-  useBillingSettings,
-  type BalancePlatform,
-} from "../../Billing/UseBillingData";
 
 // ─── MODAL ────────────────────────────────────────────────────────────────────
 function Modal({
@@ -91,36 +83,12 @@ export default function ProfileMenu({
   const [passError, setPassError] = useState<string | null>(null);
   const [passSaving, setPassSaving] = useState(false);
 
-  // Plataforma seleccionada para añadir saldo con AddBalanceModal
-  const [selectedBalancePlatform, setSelectedBalancePlatform] =
-    useState<BalancePlatform | null>(null);
-
-  // Mes actual para consultar el balance
-  const currentMonth = useMemo(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  }, []);
-
-  // Modo real de facturación del guía (auto/manual/both) — antes estaba
-  // fijado a "auto" a pelo, lo que hacía que este saldo pudiera no coincidir
-  // con el que muestra la página de Facturación si el guía usa modo manual
-  // o both. Ahora usa exactamente el mismo modo que esa página.
-  const { mode } = useBillingSettings(profile?.id ?? null);
-
-  // Hook para traer los saldos reales de la base de datos
-  const { balances, refetch: refetchBalance } = useGuideBalance(
-    profile?.id ?? null,
-    currentMonth,
-    mode,
-    false,
-  );
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (profile) {
-      setName(profile.name);
+      setName(profile.name ?? "");
       setAvatarUrl(profile.avatar_url ?? "");
     }
   }, [profile]);
@@ -194,7 +162,7 @@ export default function ProfileMenu({
     setSavingName(true);
     await supabase
       .from("profiles")
-      .update({ name: name.trim() })
+      .update({ full_name: name.trim() })
       .eq("id", profile.id);
     setSavingName(false);
     setShowEditModal(false);
@@ -256,74 +224,6 @@ export default function ProfileMenu({
               Admin
             </span>
           )}
-        </div>
-      </div>
-
-      {/* Saldo de créditos - GuruWalk y FreeTour
-          En escritorio (dropdown w-64, más estrecho) van apilados uno debajo
-          del otro para que el importe en € nunca se corte con "...". En
-          móvil (bottom sheet a pantalla completa) hay espacio de sobra, así
-          que se mantienen lado a lado como antes. */}
-      <div className="mx-4 mb-3 p-3 bg-base-200/60 rounded-2xl border border-base-content/5">
-        <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-2">
-          Saldo de créditos
-        </p>
-        <div
-          className={
-            isMobile ? "grid grid-cols-2 gap-2" : "flex flex-col gap-2"
-          }
-        >
-          {/* GuruWalk */}
-          <div className="bg-base-100 p-2.5 rounded-xl border border-base-content/5 flex items-center justify-between">
-            <div className="flex flex-col min-w-0 pr-1">
-              <span className="text-[10px] opacity-50 font-medium truncate">
-                GuruWalk
-              </span>
-              <span
-                className={`text-base font-black leading-tight truncate ${
-                  (balances?.guruwalk ?? 0) >= 0
-                    ? "text-emerald-600"
-                    : "text-red-500"
-                }`}
-              >
-                €{(balances?.guruwalk ?? 0).toFixed(2)}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedBalancePlatform("guruwalk")}
-              className="w-7 h-7 rounded-lg bg-black text-white hover:bg-black/85 active:scale-95 flex items-center justify-center font-bold text-base shrink-0 transition-all shadow-sm"
-              title="Añadir saldo a GuruWalk"
-            >
-              +
-            </button>
-          </div>
-
-          {/* FreeTour */}
-          <div className="bg-base-100 p-2.5 rounded-xl border border-base-content/5 flex items-center justify-between">
-            <div className="flex flex-col min-w-0 pr-1">
-              <span className="text-[10px] opacity-50 font-medium truncate">
-                FreeTour
-              </span>
-              <span
-                className={`text-base font-black leading-tight truncate ${
-                  (balances?.freetour ?? 0) >= 0
-                    ? "text-emerald-600"
-                    : "text-red-500"
-                }`}
-              >
-                €{(balances?.freetour ?? 0).toFixed(2)}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedBalancePlatform("freetour")}
-              className="w-7 h-7 rounded-lg bg-black text-white hover:bg-black/85 active:scale-95 flex items-center justify-center font-bold text-base shrink-0 transition-all shadow-sm"
-              title="Añadir saldo a FreeTour"
-            >
-              +
-            </button>
-          </div>
         </div>
       </div>
 
@@ -622,29 +522,6 @@ export default function ProfileMenu({
           </button>
         </div>
       </Modal>
-
-      {/* Modal para añadir saldo directamente desde ProfileMenu.
-          Envuelto en un contenedor fixed con z-index por encima del
-          bottom sheet de perfil (99999) — así queda siempre visible en
-          móvil sin depender del z-index interno de AddBalanceModal. */}
-      {selectedBalancePlatform &&
-        profile &&
-        ReactDOM.createPortal(
-          <div style={{ position: "fixed", inset: 0, zIndex: 100000 }}>
-            <AddBalanceModal
-              guideId={profile.id}
-              platform={selectedBalancePlatform}
-              platformLabel={
-                selectedBalancePlatform === "guruwalk" ? "GuruWalk" : "FreeTour"
-              }
-              onClose={() => setSelectedBalancePlatform(null)}
-              onSaved={() => {
-                refetchBalance();
-              }}
-            />
-          </div>,
-          document.body,
-        )}
     </div>
   );
 }

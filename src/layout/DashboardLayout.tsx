@@ -7,7 +7,6 @@ import Consultor    from "./Navigation/Consultor";
 import MetricsView  from "../Metrics/MetricsView";
 import GuideAvailabilityBase from "../Availability/GuideAvailabilityBase";
 import GuidesView   from "../guides/GuidesView";
-import BillingView  from "../Billing/BillingView";
 import Voucher      from "../Voucher/GenerarVoucher";
 
 export type ActiveView =
@@ -15,7 +14,6 @@ export type ActiveView =
   | "metricas"
   | "disponibilidad"
   | "guias"
-  | "facturacion"
   | "voucher";
 
 function DashboardLayout() {
@@ -37,7 +35,6 @@ function DashboardLayout() {
       case "calendario":  return <CalendarView />;
       case "disponibilidad":    return <GuideAvailabilityBase />;
       case "guias":       return <GuidesView />;
-      case "facturacion": return <BillingView />;
       case "voucher":      return <Voucher />;
       default: return (
         <div className="flex flex-col items-center justify-center h-64 gap-2 opacity-20">

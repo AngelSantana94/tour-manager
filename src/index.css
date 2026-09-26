@@ -1,49 +1,57 @@
 @import "tailwindcss";
 
-/* 1. IMPORTANTE: Así se carga DaisyUI en la v4 */
+/* Carga de DaisyUI en v4 */
 @plugin "daisyui";
 
 @theme {
-  /* Colores mapeados a tus variables */
+  /* Variables mapeadas a Tailwind v4 */
   --color-primary: var(--primary);
-  --color-secondary: var(--secondary);
+  --color-primary-hover: var(--primary-hover);
+  --color-header-bg: var(--header-bg);
   --color-main-bg: var(--bg-main);
+  --color-card-bg: var(--bg-card);
   --color-main-text: var(--text-main);
 
   --radius-xl: 1rem;
   --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
 }
 
 :root {
-  /* Tema Claro */
-  --primary: #ff6b35;
-  --secondary: #1a202c;
-  --bg-main: #ffffff;
-  --text-main: #1a202c;
+  /* Paleta Oficial Vivalux */
+  --primary: #062e24;          /* Verde crema/oscuro institucional */
+  --primary-hover: #0a4235;    /* Verde ligeramente más claro para hover */
+  --header-bg: #032018;        /* Verde muy oscuro para Header y Footer */
+  --bg-main: #f4f3ed;          /* Tono crema claro/hueso general */
+  --bg-card: #eef0ea;          /* Fondo suave para inputs / tarjetas */
+  --text-main: #1c2a26;        /* Texto principal */
 
-  /* Mapeo para que DaisyUI use tus colores */
-  --color-primary: rgb(138, 60, 184);
-  --color-base-100: #ffffff;
+  /* Mapeo para DaisyUI */
+  --color-primary: #062e24;
+  --color-base-100: #f4f3ed;
+  --color-base-200: #eef0ea;
+  --color-base-300: #e2e5dc;
 }
 
 [data-theme="dark"] {
-  /* Tema Oscuro */
-  --primary: rgb(138, 60, 184);
-  --secondary: #f7fafc;
-  --bg-main: #121212;
-  --text-main: #f1f5f9;
+  /* Ajustes en caso de usar modo oscuro */
+  --primary: #0f4c3c;
+  --primary-hover: #15624e;
+  --header-bg: #031712;
+  --bg-main: #0b1210;
+  --bg-card: #141f1c;
+  --text-main: #e8ebe9;
 
-  /* Mapeo para que DaisyUI en dark use tus colores */
-  --color-base-100: #121212;
+  --color-primary: #0f4c3c;
+  --color-base-100: #0b1210;
+  --color-base-200: #141f1c;
 }
 
 @layer base {
   body {
     background-color: var(--bg-main);
     color: var(--text-main);
-    transition:
-      background-color 0.3s,
-      color 0.3s;
-    font-family: "Inter", system-ui, sans-serif;
+    transition: background-color 0.3s, color 0.3s;
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
   }
 }

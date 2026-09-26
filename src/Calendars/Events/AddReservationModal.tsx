@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, ChevronDown } from "lucide-react";
-import { supabase } from "../../lib/supabaseClientOTA";
+import { supabase } from "../../lib/supabaseClient";
 
 export interface Reservation {
   id: string;

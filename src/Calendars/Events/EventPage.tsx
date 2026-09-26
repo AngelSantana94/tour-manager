@@ -1,260 +1,119 @@
-import { useEffect, useState } from "react";
-import { Ban, Minus, Plus, ArrowLeft } from "lucide-react";
+import { useState } from "react";
+import { Map as MapIcon, Check } from "lucide-react";
 import EventHeader from "./EventHeader";
-import OtaEventBody from "./OtaEventBody";
-import TGBEventBody from "./TGBEventBody";
-import AddReservationModal from "./AddReservationModal";
+import EventBody from "./EventBody";
+import type { GuideSlot } from "../Services/Supabase.adapter";
 import type { CalendarEvent } from "../CreateEventModal";
-import type { Reservation } from "./AddReservationModal";
+
+export type Period = "AM" | "PM" | "NT";
+
+export const PERIODS: { value: Period; label: string }[] = [
+  { value: "AM", label: "AM" },
+  { value: "PM", label: "PM" },
+  { value: "NT", label: "NT" },
+];
+
+export interface TourFormState {
+  tour_type: string;
+  date: string;
+  city: string;
+  pax: number;
+  meeting_point: string;
+  notes: string;
+  provider_id: string | null;
+  tour_operator_id: string | null;
+  tour_leader_id: string | null;
+  tour_leader_phone: string | null;
+}
+
+export type UpdateTourFn = (
+  id: string,
+  data: Partial<{
+    tour_type: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    city: string;
+    pax: number;
+    meeting_point: string;
+    status: string;
+    notes: string;
+    period: string;
+    provider_id: string | null;
+    tour_operator_id: string | null;
+    tour_leader_id: string | null;
+    tour_leader_phone: string | null;
+  }>,
+) => Promise<void>;
 
 interface EventPageProps {
   event: CalendarEvent;
-  allEvents: CalendarEvent[];
   onBack: () => void;
   onDelete: (eventId: string) => void;
-  onAddReservation: (
+  onUpdate: UpdateTourFn;
+  onAssignGuide: (
     tourId: string,
-    data: Omit<Reservation, "id">,
+    guideId: string,
+    slot: GuideSlot,
   ) => Promise<void>;
-  onRemoveReservation: (reservationId: string, tourId: string) => Promise<void>;
-  onRefetch: () => void;
-  // Acciones exclusivas de TGB (aforo puntual vía schedule_exceptions).
-  // Vienen del hook useSupabaseTGBEvents, a través de CalendarView.
-  onUpsertTgbException: (
-    scheduleId: string,
-    date: string,
-    input: { customCapacity?: number | null; isClosed?: boolean },
-  ) => Promise<void>;
-  onClearTgbException: (scheduleId: string, date: string) => Promise<void>;
+  onUnassignGuide: (tourId: string, slot: GuideSlot) => Promise<void>;
 }
 
-const QUICK_CAPACITIES = [10, 15, 20, 25, 30, 50, 100];
-
-function formatDateTimeShort(dateStr: string, timeStr: string): string {
+function formatDateOnly(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
-  const dateLabel = new Date(y, m - 1, d).toLocaleDateString("es-ES", {
+  return new Date(y, m - 1, d).toLocaleDateString("es-ES", {
     weekday: "short",
     day: "numeric",
     month: "short",
     year: "numeric",
   });
-  return `${dateLabel} · ${timeStr}`;
 }
 
-// ─── MODAL DE AFORO ─────────────────────────────────────────────────────────
-// Escritorio: modal centrado. Móvil: hoja que sube desde abajo (no fullscreen).
-function CapacityModal({
-  dateLabel,
-  initialCapacity,
-  onClose,
-  onSave,
-}: {
-  dateLabel: string;
-  initialCapacity: number;
-  onClose: () => void;
-  onSave: (capacity: number) => Promise<void>;
-}) {
-  const [visible, setVisible] = useState(false);
-  const [capacity, setCapacity] = useState(initialCapacity);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setVisible(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  function handleClose() {
-    setVisible(false);
-    setTimeout(onClose, 220);
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await onSave(capacity);
-      handleClose();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center p-0 md:p-4">
-      <div
-        className={[
-          "absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-200",
-          visible ? "opacity-100" : "opacity-0",
-        ].join(" ")}
-        onClick={handleClose}
-      />
-
-      <div
-        className={[
-          "relative w-full md:max-w-sm bg-base-100 shadow-2xl flex flex-col",
-          "rounded-t-3xl md:rounded-2xl transform transition-all duration-300 ease-out",
-          visible
-            ? "translate-y-0 opacity-100 md:scale-100"
-            : "translate-y-full md:translate-y-4 opacity-0 md:scale-95",
-        ].join(" ")}
-      >
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-base-content/10">
-          <button
-            onClick={handleClose}
-            className="btn btn-ghost btn-circle btn-sm"
-            aria-label="Volver"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <span className="font-semibold text-sm capitalize">{dateLabel}</span>
-        </div>
-
-        <div className="p-5 flex flex-col gap-5">
-          <div className="bg-base-200/50 rounded-2xl p-5 flex items-center justify-center gap-6">
-            <button
-              type="button"
-              onClick={() => setCapacity((v) => Math.max(0, v - 1))}
-              className="btn btn-circle bg-base-100 shadow-sm"
-            >
-              <Minus size={16} />
-            </button>
-            <span className="text-3xl font-black w-16 text-center tabular-nums">
-              {capacity}
-            </span>
-            <button
-              type="button"
-              onClick={() => setCapacity((v) => v + 1)}
-              className="btn btn-circle bg-base-100 shadow-sm"
-            >
-              <Plus size={16} />
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-semibold opacity-40 uppercase tracking-wide">
-              Selección rápida
-            </span>
-            <div className="grid grid-cols-4 gap-2">
-              {QUICK_CAPACITIES.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setCapacity(n)}
-                  className={[
-                    "btn btn-sm",
-                    capacity === n
-                      ? "bg-base-content text-base-100 border-none"
-                      : "btn-outline border-base-300",
-                  ].join(" ")}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="btn btn-neutral w-full disabled:opacity-40"
-          >
-            {saving ? (
-              <span className="loading loading-spinner loading-sm" />
-            ) : (
-              "Guardar cambios"
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── MODAL DE CONFIRMACIÓN (reemplaza window.confirm) ──────────────────────
-// Mismo tamaño/posición en móvil y escritorio: centrado, responsive, nunca
-// fullscreen — es solo una confirmación corta, no necesita más espacio.
-function ConfirmDialog({
-  title,
-  message,
-  confirmLabel,
-  danger,
-  saving,
+// ─── CONFIRMACIÓN PARA CANCELAR ────────────────────────────────────────────
+function ConfirmCancelDialog({
   onCancel,
   onConfirm,
+  saving,
 }: {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  danger?: boolean;
-  saving?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  saving: boolean;
 }) {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setVisible(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  function handleCancel() {
-    setVisible(false);
-    setTimeout(onCancel, 180);
-  }
-
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div
-        className={[
-          "absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-200",
-          visible ? "opacity-100" : "opacity-0",
-        ].join(" ")}
-        onClick={handleCancel}
+        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+        onClick={onCancel}
       />
-
-      <div
-        className={[
-          "relative w-full max-w-sm bg-base-100 rounded-2xl shadow-2xl p-5 flex flex-col gap-4",
-          "transform transition-all duration-200 ease-out",
-          visible ? "opacity-100 scale-100" : "opacity-0 scale-95",
-        ].join(" ")}
-      >
+      <div className="relative w-full max-w-sm bg-base-100 rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
         <div className="flex items-start gap-3">
-          <div
-            className={[
-              "w-9 h-9 rounded-full flex items-center justify-center shrink-0",
-              danger
-                ? "bg-amber-100 text-amber-700"
-                : "bg-emerald-100 text-emerald-700",
-            ].join(" ")}
-          >
-            <Ban size={16} />
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-amber-100 text-amber-700">
+            <span className="text-lg">⚠️</span>
           </div>
           <div className="flex flex-col gap-1 pt-1">
-            <h3 className="text-base font-bold leading-tight">{title}</h3>
-            <p className="text-sm opacity-70 leading-snug">{message}</p>
+            <h3 className="text-base font-bold leading-tight">Cancelar tour</h3>
+            <p className="text-sm opacity-70 leading-snug">
+              El tour quedará marcado como "Cancelado". Puedes reactivarlo
+              cuando quieras.
+            </p>
           </div>
         </div>
-
         <div className="flex gap-2 justify-end pt-1">
           <button
-            onClick={handleCancel}
+            onClick={onCancel}
             className="btn btn-sm btn-outline border-base-content/20"
           >
-            Cancelar
+            Volver
           </button>
           <button
             onClick={onConfirm}
             disabled={saving}
-            className={[
-              "btn btn-sm disabled:opacity-40",
-              danger ? "btn-error text-white" : "btn-success text-white",
-            ].join(" ")}
+            className="btn btn-sm btn-error text-white disabled:opacity-40"
           >
             {saving ? (
               <span className="loading loading-spinner loading-xs" />
             ) : (
-              confirmLabel
+              "Cancelar tour"
             )}
           </button>
         </div>
@@ -263,172 +122,202 @@ function ConfirmDialog({
   );
 }
 
-// ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 export default function EventPage({
   event,
-  allEvents,
   onBack,
   onDelete,
-  onAddReservation,
-  onRemoveReservation,
-  onRefetch,
-  onUpsertTgbException,
-  onClearTgbException,
+  onUpdate,
+  onAssignGuide,
+  onUnassignGuide,
 }: EventPageProps) {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [mobileView, setMobileView] = useState<"info" | "reservations">(
-    "reservations",
-  );
+  const [savingStatus, setSavingStatus] = useState(false);
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
-  const [capacityModalOpen, setCapacityModalOpen] = useState(false);
-  const [confirmAvailabilityOpen, setConfirmAvailabilityOpen] = useState(false);
-  const [togglingAvailability, setTogglingAvailability] = useState(false);
+  const meta = event.meta ?? {};
+  const status = (meta.status as string) ?? "Confirmado";
+  const isCancelled = status === "Cancelado";
 
-  // Identificación de la fuente de la tarjeta (ver SupabaseTGB.adapter.ts / SupabaseOTA.adapter.ts)
-  const source = (event.meta?.source as string | undefined) ?? "ota";
-  const isTuGuia = source === "tgb";
+  // ── Periodo (AM / PM / NT) — reactivo, guarda al instante ───────────────
+  const [period, setPeriod] = useState<Period>((meta.period as Period) ?? "NT");
+  const [savingPeriod, setSavingPeriod] = useState(false);
 
-  const allReservations: Reservation[] = allEvents.flatMap(
-    (e) => (e.meta?.reservations as Reservation[]) ?? [],
-  );
+  async function handlePeriodChange(value: Period) {
+    const previous = period;
+    setPeriod(value);
+    setSavingPeriod(true);
+    try {
+      await onUpdate(event.id, { period: value });
+    } catch {
+      setPeriod(previous);
+    } finally {
+      setSavingPeriod(false);
+    }
+  }
 
-  // Datos TGB derivados del evento (solo relevantes cuando isTuGuia)
-  const scheduleId = event.meta?.scheduleId as string | undefined;
-  const maxCapacity = (event.meta?.maxCapacity as number) ?? 0;
-  const hasException = !!event.meta?.exceptionId;
-  const activePax = allReservations
-    .filter((r) => r.status !== "cancelled")
-    .reduce((acc, r) => acc + r.adults + r.children, 0);
+  // ── Formulario general — se guarda de golpe al pulsar "Guardar" ────────
+  const [form, setForm] = useState<TourFormState>({
+    tour_type: event.tour,
+    date: event.date,
+    city: (meta.city as string) ?? "",
+    pax: (meta.pax as number) ?? 0,
+    meeting_point: (meta.meetingPoint as string) ?? "",
+    notes: (meta.notes as string) ?? "",
+    provider_id: (meta.providerId as string) ?? null,
+    tour_operator_id: (meta.operatorId as string) ?? null,
+    tour_leader_id: (meta.tourLeaderId as string) ?? null,
+    tour_leader_phone: (meta.leaderPhone as string) ?? null,
+  });
 
-  async function handleSaveReservation(reservation: Reservation) {
+  async function handleToggleEdit() {
+    if (!editing) {
+      setEditing(true);
+      return;
+    }
     setSaving(true);
     try {
-      await onAddReservation(event.id, {
-        name: reservation.name,
-        phone: reservation.phone,
-        adults: reservation.adults,
-        children: reservation.children,
-        status: "active",
-        attended: false,
-        platform: (reservation as any).platform,
-      });
+      await onUpdate(event.id, form);
+      setEditing(false);
     } finally {
       setSaving(false);
     }
   }
 
   function handleDelete() {
-    if (confirm("¿Eliminar este evento?")) {
+    if (confirm("¿Eliminar este tour?")) {
       onDelete(event.id);
       onBack();
     }
   }
 
-  async function handleSaveCapacity(capacity: number) {
-    if (!scheduleId) return;
-    await onUpsertTgbException(scheduleId, event.date, {
-      customCapacity: capacity,
-    });
+  function handleToggleCancel() {
+    if (isCancelled) {
+      handleReactivate();
+    } else {
+      setConfirmCancelOpen(true);
+    }
   }
 
-  async function handleConfirmToggleAvailability() {
-    if (!scheduleId) return;
-    setTogglingAvailability(true);
+  async function handleReactivate() {
+    setSavingStatus(true);
     try {
-      if (hasException) {
-        await onClearTgbException(scheduleId, event.date);
-      } else {
-        await onUpsertTgbException(scheduleId, event.date, {
-          customCapacity: activePax,
-        });
-      }
-      setConfirmAvailabilityOpen(false);
+      await onUpdate(event.id, { status: "Confirmado" });
     } finally {
-      setTogglingAvailability(false);
+      setSavingStatus(false);
+    }
+  }
+
+  async function handleConfirmCancel() {
+    setSavingStatus(true);
+    try {
+      await onUpdate(event.id, { status: "Cancelado" });
+      setConfirmCancelOpen(false);
+    } finally {
+      setSavingStatus(false);
     }
   }
 
   return (
-    <div className="flex flex-col h-full w-full bg-base-100 overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-base-200/30 overflow-hidden">
       <EventHeader
         onBack={onBack}
-        onEdit={() => setModalOpen(true)}
+        onEdit={handleToggleEdit}
         onDelete={handleDelete}
-        source={source}
-        isTuGuia={isTuGuia}
-        mobileView={mobileView}
-        onToggleMobileView={() =>
-          setMobileView((v) => (v === "reservations" ? "info" : "reservations"))
-        }
-        onOpenCapacity={isTuGuia ? () => setCapacityModalOpen(true) : undefined}
-        onToggleAvailability={
-          isTuGuia ? () => setConfirmAvailabilityOpen(true) : undefined
-        }
-        hasException={hasException}
-        togglingAvailability={togglingAvailability}
+        editing={editing}
+        isCancelled={isCancelled}
+        onToggleCancel={handleToggleCancel}
+        togglingCancel={savingStatus}
       />
 
-      {isTuGuia ? (
-        <TGBEventBody
-          event={event}
-          allEvents={allEvents}
-          reservations={allReservations}
-          mobileView={mobileView}
-        />
-      ) : (
-        <OtaEventBody
-          event={event}
-          allEvents={allEvents}
-          reservations={allReservations}
-          mobileView={mobileView}
-          onRemoveReservation={(resId) => onRemoveReservation(resId, event.id)}
-          onRefetch={onRefetch}
-        />
-      )}
-
-      {/* "Reservar manualmente" es funcionalidad de OTA; TGB no la admite */}
-      {!isTuGuia && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-base-100 border-t border-base-content/10 px-4 py-3">
-          <button
-            onClick={() => setModalOpen(true)}
-            className="btn w-full btn-outline border-base-content/20 gap-2 font-semibold"
+      <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 max-w-2xl mx-auto w-full">
+        {/* ── Banner ── */}
+        <div className="rounded-2xl overflow-hidden shadow-sm border border-base-content/10">
+          <div
+            className="relative px-5 pt-5 pb-4 flex flex-col gap-2"
+            style={{
+              background:
+                "linear-gradient(135deg, #1e293b 0%, #334155 60%, #475569 100%)",
+            }}
           >
-            ⚙️ Acciones del evento
-          </button>
+            <span
+              className={[
+                "absolute top-4 right-5 flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full",
+                isCancelled
+                  ? "bg-error text-white"
+                  : "bg-emerald-500 text-white",
+              ].join(" ")}
+            >
+              {!isCancelled && <Check size={13} />}
+              {status}
+            </span>
+
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
+                <MapIcon size={20} className="text-white" />
+              </div>
+              <div className="flex flex-col min-w-0 pr-24">
+                <h1 className="text-lg font-black text-white leading-tight truncate uppercase">
+                  {event.tour}
+                </h1>
+                {editing ? (
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, date: e.target.value }))
+                    }
+                    className="input input-bordered input-xs mt-1 w-40 text-xs"
+                  />
+                ) : (
+                  <span className="text-sm text-white/70 capitalize">
+                    {formatDateOnly(event.date)}
+                  </span>
+                )}
+                <span className="text-[11px] text-white/40 font-mono mt-0.5">
+                  ID: {(meta.serviceId as string) || event.id}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] font-bold text-white/60 uppercase tracking-widest">
+                Periodo
+              </span>
+              <select
+                value={period}
+                disabled={savingPeriod}
+                onChange={(e) => handlePeriodChange(e.target.value as Period)}
+                className="select select-bordered select-xs font-bold bg-white/90 disabled:opacity-40"
+              >
+                {PERIODS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              {savingPeriod && (
+                <span className="loading loading-spinner loading-xs text-white" />
+              )}
+            </div>
+          </div>
+
+          <EventBody
+            event={event}
+            form={form}
+            setForm={setForm}
+            editing={editing}
+            onAssignGuide={onAssignGuide}
+            onUnassignGuide={onUnassignGuide}
+          />
         </div>
-      )}
+      </div>
 
-      {modalOpen && !isTuGuia && (
-        <AddReservationModal
-          onClose={() => setModalOpen(false)}
-          onSave={handleSaveReservation}
-          saving={saving}
-        />
-      )}
-
-      {capacityModalOpen && scheduleId && (
-        <CapacityModal
-          dateLabel={formatDateTimeShort(event.date, event.time)}
-          initialCapacity={maxCapacity}
-          onClose={() => setCapacityModalOpen(false)}
-          onSave={handleSaveCapacity}
-        />
-      )}
-
-      {confirmAvailabilityOpen && (
-        <ConfirmDialog
-          title={hasException ? "Habilitar horario" : "Quitar disponibilidad"}
-          message={
-            hasException
-              ? "Se restablecerá el aforo base de este horario."
-              : `No se aceptarán nuevas reservas mientras el aforo esté al límite (${activePax}). Si alguna reserva se cancela, la plaza se libera automáticamente.`
-          }
-          confirmLabel={hasException ? "Habilitar" : "Quitar disponibilidad"}
-          danger={!hasException}
-          saving={togglingAvailability}
-          onCancel={() => setConfirmAvailabilityOpen(false)}
-          onConfirm={handleConfirmToggleAvailability}
+      {confirmCancelOpen && (
+        <ConfirmCancelDialog
+          saving={savingStatus}
+          onCancel={() => setConfirmCancelOpen(false)}
+          onConfirm={handleConfirmCancel}
         />
       )}
     </div>

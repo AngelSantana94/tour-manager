@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  createReservation,
+  assignGuideToTour,
   createTour,
-  deleteReservation,
   deleteTour,
   fetchTours,
+  removeGuideFromTour,
   supabase,
   updateTour,
-} from "./SupabaseOTA.adapter";
+  type GuideSlot,
+} from "./Supabase.adapter";
 import type { CalendarEvent } from "../CreateEventModal";
-import type { Reservation } from "../Events/AddReservationModal";
 
-const CACHE_KEY = "gw_events_v2";
+const CACHE_KEY = "vlx_tours_v1";
 
 // ─── CACHÉ ────────────────────────────────────────────────────────────────────
 function readCache(): CalendarEvent[] {
@@ -26,15 +26,25 @@ function readCache(): CalendarEvent[] {
 function writeCache(events: CalendarEvent[]) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(events));
-  } catch {}
+  } catch {
+    // localStorage lleno o bloqueado: no es crítico, la próxima carga vuelve a pedir a Supabase
+  }
 }
 
 // ─── HOOK ─────────────────────────────────────────────────────────────────────
-export function useSupabaseOTAEvents() {
+export function useSupabaseEvents() {
   const [events, setEvents] = useState<CalendarEvent[]>(() => readCache());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Evita recargar de golpe si Realtime dispara varios cambios seguidos
+  // (por ejemplo, al correr la importación del Sheet sobre muchos tours a la vez).
+  function scheduleReload() {
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => loadEvents(false), 500);
+  }
 
   // ── FETCH ────────────────────────────────────────────────────────────────
   async function loadEvents(showSpinner = false) {
@@ -53,6 +63,8 @@ export function useSupabaseOTAEvents() {
   }
 
   // ── REALTIME ─────────────────────────────────────────────────────────────
+  // Nota: RLS filtra lo que cada cuenta puede ver. Una guía solo recibirá eventos
+  // de los tours donde es lead o back-up; Rocío (admin) recibe todo.
   useEffect(() => {
     const hasCache = readCache().length > 0;
     loadEvents(!hasCache);
@@ -63,44 +75,44 @@ export function useSupabaseOTAEvents() {
         "postgres_changes",
         { event: "*", schema: "public", table: "tours" },
         () => {
-          console.log("[realtime] tours actualizado");
-          loadEvents(false);
+          scheduleReload();
         },
       )
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "reservations",
-      }, () => {
-        console.log("[realtime] reservations actualizado");
-        loadEvents(false);
-      })
       .subscribe();
 
     return () => {
+      clearTimeout(timerRef.current);
       channelRef.current?.unsubscribe();
     };
   }, []);
 
   // ── CREATE TOUR ──────────────────────────────────────────────────────────
   async function addEvent(input: {
-    title: string;
+    tour_type: string;
     date: string;
-    time: string;
-    guide?: string;
-    language?: string;
+    start_time?: string;
+    city?: string;
+    pax?: number;
+    meeting_point?: string;
+    notes?: string;
   }): Promise<void> {
     const tempId = `temp_${Date.now()}`;
     const optimistic: CalendarEvent = {
       id: tempId,
-      tour: input.title,
+      tour: input.tour_type,
       date: input.date,
-      time: input.time,
+      time: input.start_time ? input.start_time.slice(0, 5) : "00:00",
       meta: {
-        guide: input.guide,
-        language: input.language ?? "es",
-        pax: 0,
-        reservations: [],
+        source: "agenda",
+        pax: input.pax ?? 0,
+        city: input.city ?? "Brujas",
+        meetingPoint: input.meeting_point ?? null,
+        notes: input.notes ?? null,
+        status: "Confirmado",
+        guideLead: null,
+        backup1: null,
+        backup2: null,
+        tourGuides: [],
       },
     };
 
@@ -113,7 +125,7 @@ export function useSupabaseOTAEvents() {
     try {
       const realId = await createTour(input);
       setEvents((prev) => {
-        const u = prev.map((e) => e.id === tempId ? { ...e, id: realId } : e);
+        const u = prev.map((e) => (e.id === tempId ? { ...e, id: realId } : e));
         writeCache(u);
         return u;
       });
@@ -130,31 +142,42 @@ export function useSupabaseOTAEvents() {
   // ── UPDATE TOUR ──────────────────────────────────────────────────────────
   async function updateEvent(
     id: string,
-    data: Partial<
-      {
-        title: string;
-        date: string;
-        time: string;
-        guide: string;
-        language: string;
-      }
-    >,
+    data: Partial<{
+      tour_type: string;
+      date: string;
+      start_time: string;
+      end_time: string;
+      city: string;
+      pax: number;
+      meeting_point: string;
+      status: string;
+      notes: string;
+      period: string; 
+      provider_id: string | null;
+      tour_operator_id: string | null;
+      tour_leader_id: string | null;
+      tour_leader_phone: string | null;
+    }>,
   ): Promise<void> {
     const backup = events.find((e) => e.id === id);
     setEvents((prev) => {
       const u = prev.map((e) =>
         e.id === id
           ? {
-            ...e,
-            tour: data.title ?? e.tour,
-            date: data.date ?? e.date,
-            time: data.time ?? e.time,
-            meta: {
-              ...e.meta,
-              guide: data.guide ?? e.meta?.guide,
-              language: data.language ?? e.meta?.language,
-            },
-          }
+              ...e,
+              tour: data.tour_type ?? e.tour,
+              date: data.date ?? e.date,
+              time: data.start_time ? data.start_time.slice(0, 5) : e.time,
+              meta: {
+                ...e.meta,
+                city: data.city ?? e.meta?.city,
+                pax: data.pax ?? e.meta?.pax,
+                meetingPoint: data.meeting_point ?? e.meta?.meetingPoint,
+                status: data.status ?? e.meta?.status,
+                notes: data.notes ?? e.meta?.notes,
+                period: data.period ?? e.meta?.period, // ← nuevo
+              },
+            }
           : e
       );
       writeCache(u);
@@ -166,7 +189,7 @@ export function useSupabaseOTAEvents() {
     } catch (err) {
       if (backup) {
         setEvents((prev) => {
-          const u = prev.map((e) => e.id === id ? backup : e);
+          const u = prev.map((e) => (e.id === id ? backup : e));
           writeCache(u);
           return u;
         });
@@ -198,88 +221,19 @@ export function useSupabaseOTAEvents() {
     }
   }
 
-  // ── REMOVE AVAILABILITY (QUITAR DISPONIBILIDAD) ─────────────────────────
-  async function removeAvailability(tourId: string): Promise<void> {
-    const backup = events.find((e) => e.id === tourId);
-
-    // Actualización optimista en interfaz y caché
-    setEvents((prev) => {
-      const u = prev.filter((e) => e.id !== tourId);
-      writeCache(u);
-      return u;
-    });
-
-    try {
-      await deleteTour(tourId);
-    } catch (err) {
-      if (backup) {
-        setEvents((prev) => {
-          const u = [...prev, backup];
-          writeCache(u);
-          return u;
-        });
-      }
-      throw err;
-    }
+  // ── ASIGNAR / QUITAR GUÍA ────────────────────────────────────────────────
+  async function assignGuide(
+    tourId: string,
+    guideId: string,
+    slot: GuideSlot = "guide_lead_id",
+  ): Promise<void> {
+    await assignGuideToTour(tourId, guideId, slot);
+    await loadEvents(false); // más simple y seguro que actualizar el nombre del guía a mano en caché
   }
 
-  // ── CREATE RESERVATION ───────────────────────────────────────────────────
-  async function addReservation(
-    tourId: string,
-    data: Omit<Reservation, "id">,
-  ): Promise<void> {
-    const realId = await createReservation({
-      tour_id: tourId,
-      contact_name: data.name,
-      phone: data.phone,
-      adults: data.adults,
-      children: data.children,
-      status: "active",
-      attended: false,
-    });
-
-    const newRes: Reservation = { id: realId, ...data };
-    setEvents((prev) => {
-      const u = prev.map((e) => {
-        if (e.id !== tourId) return e;
-        const existing = (e.meta?.reservations as Reservation[]) ?? [];
-        const newPax = (e.meta?.pax as number ?? 0) + data.adults +
-          data.children;
-        return {
-          ...e,
-          meta: { ...e.meta, reservations: [...existing, newRes], pax: newPax },
-        };
-      });
-      writeCache(u);
-      return u;
-    });
-  }
-
-  // ── DELETE RESERVATION ───────────────────────────────────────────────────
-  async function removeReservation(
-    reservationId: string,
-    tourId: string,
-  ): Promise<void> {
-    await deleteReservation(reservationId);
-
-    setEvents((prev) => {
-      const u = prev.map((e) => {
-        if (e.id !== tourId) return e;
-        const existing = (e.meta?.reservations as Reservation[]) ?? [];
-        const removed = existing.find((r) => r.id === reservationId);
-        const removedPax = removed ? removed.adults + removed.children : 0;
-        return {
-          ...e,
-          meta: {
-            ...e.meta,
-            reservations: existing.filter((r) => r.id !== reservationId),
-            pax: Math.max(0, (e.meta?.pax as number ?? 0) - removedPax),
-          },
-        };
-      });
-      writeCache(u);
-      return u;
-    });
+  async function unassignGuide(tourId: string, slot: GuideSlot): Promise<void> {
+    await removeGuideFromTour(tourId, slot);
+    await loadEvents(false);
   }
 
   return {
@@ -290,8 +244,7 @@ export function useSupabaseOTAEvents() {
     addEvent,
     updateEvent,
     removeEvent,
-    removeAvailability,
-    addReservation,
-    removeReservation,
+    assignGuide,
+    unassignGuide,
   };
 }
