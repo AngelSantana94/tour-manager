@@ -48,116 +48,512 @@ interface HookPayload {
 }
 
 // =============================================================================
-// EMAIL
+// VIVALUX BRAND
+// =============================================================================
+
+const VIVALUX_GREEN = "#003D2F";
+const VIVALUX_GREEN_DARK = "#002B22";
+const VIVALUX_GOLD = "#D8B65A";
+const VIVALUX_GOLD_LIGHT = "#E8CF83";
+const VIVALUX_CREAM = "#F7F5EE";
+const VIVALUX_TEXT = "#17352E";
+const VIVALUX_MUTED = "#60716C";
+
+// IMPORTANTE:
+// Un email no puede resolver "/vivalux-logo.png" como lo haría tu aplicación.
+//
+// El logo debe estar publicado en una URL accesible públicamente.
+// Si tu web sirve el archivo en:
+// https://vivalux.tours/vivalux-logo.png
+// esta URL funcionará directamente.
+//
+// También puedes convertirlo posteriormente en un secret/env si quieres.
+const VIVALUX_LOGO_URL =
+  "https://vivalux.tours/vivalux-logo.png";
+
+// =============================================================================
+// TIPOS DE EMAIL
 // =============================================================================
 
 interface EmailContent {
   subject: string;
-  html: (confirmUrl: string) => string;
+  html: (
+    confirmUrl: string,
+    userName: string | null,
+    userEmail: string,
+  ) => string;
 }
 
-const BRAND_COLOR = "#4F46E5";
+// =============================================================================
+// SEGURIDAD HTML
+// =============================================================================
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// =============================================================================
+// NOMBRE DEL USUARIO
+// =============================================================================
+
+function getUserName(
+  metadata: Record<string, unknown> | undefined,
+): string | null {
+  const possibleName =
+    metadata?.full_name ??
+    metadata?.name ??
+    metadata?.display_name;
+
+  if (typeof possibleName !== "string") {
+    return null;
+  }
+
+  const cleanName = possibleName.trim();
+
+  if (!cleanName) {
+    return null;
+  }
+
+  return cleanName;
+}
+
+// =============================================================================
+// LAYOUT PRINCIPAL
+// =============================================================================
 
 function baseLayout(opts: {
   title: string;
+  greeting: string;
   body: string;
+  welcomeBoxTitle: string;
+  welcomeBoxBody: string;
   buttonLabel: string;
   confirmUrl: string;
+  fallbackText: string;
   footer: string;
 }): string {
   return `
-    <div
-      style="
-        margin:0;
-        padding:32px 16px;
-        background:#f4f4f7;
-        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
-      "
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+  <meta name="color-scheme" content="light" />
+  <title>${opts.title}</title>
+
+  <style>
+    @media only screen and (max-width: 620px) {
+      .email-wrapper {
+        padding: 16px !important;
+      }
+
+      .email-card {
+        border-radius: 18px !important;
+      }
+
+      .email-header {
+        padding: 28px 24px !important;
+      }
+
+      .email-content {
+        padding: 32px 24px !important;
+      }
+
+      .email-title {
+        font-size: 27px !important;
+        line-height: 1.2 !important;
+      }
+
+      .welcome-box {
+        padding: 18px !important;
+      }
+
+      .email-button {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        text-align: center !important;
+      }
+
+      .email-footer {
+        padding: 24px !important;
+      }
+    }
+  </style>
+</head>
+
+<body
+  style="
+    margin:0;
+    padding:0;
+    background:${VIVALUX_CREAM};
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+    color:${VIVALUX_TEXT};
+  "
+>
+  <div
+    class="email-wrapper"
+    style="
+      width:100%;
+      box-sizing:border-box;
+      padding:40px 16px;
+      background:${VIVALUX_CREAM};
+    "
+  >
+
+    <table
+      role="presentation"
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      border="0"
+      style="max-width:600px;margin:0 auto;"
     >
-      <div
-        style="
-          width:100%;
-          max-width:480px;
-          margin:0 auto;
-          background:#ffffff;
-          border-radius:16px;
-          overflow:hidden;
-          box-shadow:0 2px 8px rgba(0,0,0,0.06);
-        "
-      >
-        <!-- Header -->
-        <div
-          style="
-            background:${BRAND_COLOR};
-            padding:24px 32px;
-          "
-        >
-          <span
-            style="
-              color:#ffffff;
-              font-size:20px;
-              font-weight:800;
-              letter-spacing:-0.02em;
-            "
-          >
-            VivaLux
-          </span>
-        </div>
+      <tr>
+        <td>
 
-        <!-- Content -->
-        <div style="padding:32px;">
-          <h1
-            style="
-              margin:0 0 12px;
-              color:#111827;
-              font-size:20px;
-              line-height:1.3;
-              font-weight:700;
-            "
-          >
-            ${opts.title}
-          </h1>
+          <!-- ============================================================= -->
+          <!-- CARD                                                          -->
+          <!-- ============================================================= -->
 
-          <p
+          <table
+            class="email-card"
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
             style="
-              margin:0 0 24px;
-              color:#374151;
-              font-size:14px;
-              line-height:1.6;
+              background:#ffffff;
+              border-radius:22px;
+              overflow:hidden;
+              box-shadow:0 12px 40px rgba(0,61,47,0.10);
             "
           >
-            ${opts.body}
-          </p>
 
-          <a
-            href="${opts.confirmUrl}"
-            style="
-              display:inline-block;
-              background:${BRAND_COLOR};
-              color:#ffffff;
-              text-decoration:none;
-              font-size:14px;
-              font-weight:600;
-              padding:12px 24px;
-              border-radius:10px;
-            "
-          >
-            ${opts.buttonLabel}
-          </a>
+            <!-- ========================================================= -->
+            <!-- HEADER                                                      -->
+            <!-- ========================================================= -->
 
-          <p
-            style="
-              margin:24px 0 0;
-              color:#9CA3AF;
-              font-size:12px;
-              line-height:1.5;
-            "
-          >
-            ${opts.footer}
-          </p>
-        </div>
-      </div>
-    </div>
+            <tr>
+              <td
+                class="email-header"
+                style="
+                  padding:30px 38px 28px;
+                  background:${VIVALUX_GREEN};
+                  border-bottom:1px solid rgba(216,182,90,0.35);
+                "
+              >
+
+                <table
+                  role="presentation"
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                >
+                  <tr>
+
+                    <td
+                      align="left"
+                      valign="middle"
+                    >
+                      <img
+                        src="${VIVALUX_LOGO_URL}"
+                        alt="VivaLux"
+                        width="150"
+                        style="
+                          display:block;
+                          width:150px;
+                          max-width:100%;
+                          height:auto;
+                          border:0;
+                          outline:none;
+                          text-decoration:none;
+                        "
+                      />
+                    </td>
+
+                    <td
+                      align="right"
+                      valign="middle"
+                      style="
+                        color:${VIVALUX_GOLD_LIGHT};
+                        font-size:11px;
+                        font-weight:600;
+                        letter-spacing:1.5px;
+                        text-transform:uppercase;
+                      "
+                    >
+                      Tour Manager
+                    </td>
+
+                  </tr>
+                </table>
+
+              </td>
+            </tr>
+
+            <!-- ========================================================= -->
+            <!-- GOLD LINE                                                   -->
+            <!-- ========================================================= -->
+
+            <tr>
+              <td
+                style="
+                  height:3px;
+                  line-height:3px;
+                  font-size:3px;
+                  background:${VIVALUX_GOLD};
+                "
+              >
+                &nbsp;
+              </td>
+            </tr>
+
+            <!-- ========================================================= -->
+            <!-- CONTENT                                                     -->
+            <!-- ========================================================= -->
+
+            <tr>
+              <td
+                class="email-content"
+                style="
+                  padding:42px 42px 38px;
+                  background:#ffffff;
+                "
+              >
+
+                <!-- Eyebrow -->
+
+                <div
+                  style="
+                    margin-bottom:12px;
+                    color:${VIVALUX_GOLD};
+                    font-size:11px;
+                    line-height:1.4;
+                    font-weight:800;
+                    letter-spacing:2.2px;
+                    text-transform:uppercase;
+                  "
+                >
+                  Bienvenido a VivaLux
+                </div>
+
+                <!-- Title -->
+
+                <h1
+                  class="email-title"
+                  style="
+                    margin:0 0 18px;
+                    color:${VIVALUX_GREEN};
+                    font-family:Georgia,'Times New Roman',serif;
+                    font-size:32px;
+                    line-height:1.2;
+                    font-weight:500;
+                    letter-spacing:-0.4px;
+                  "
+                >
+                  ${opts.greeting}
+                </h1>
+
+                <!-- Main paragraph -->
+
+                <p
+                  style="
+                    margin:0 0 26px;
+                    color:${VIVALUX_MUTED};
+                    font-size:15px;
+                    line-height:1.75;
+                  "
+                >
+                  ${opts.body}
+                </p>
+
+                <!-- ===================================================== -->
+                <!-- WELCOME BOX                                            -->
+                <!-- ===================================================== -->
+
+                <table
+                  class="welcome-box"
+                  role="presentation"
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                  style="
+                    margin:0 0 30px;
+                    background:#F2F6F2;
+                    border:1px solid #E2EBE5;
+                    border-radius:14px;
+                  "
+                >
+                  <tr>
+                    <td
+                      class="welcome-box"
+                      style="padding:21px 22px;"
+                    >
+
+                      <div
+                        style="
+                          margin-bottom:7px;
+                          color:${VIVALUX_GREEN};
+                          font-size:14px;
+                          line-height:1.4;
+                          font-weight:800;
+                        "
+                      >
+                        ${opts.welcomeBoxTitle}
+                      </div>
+
+                      <div
+                        style="
+                          color:${VIVALUX_MUTED};
+                          font-size:13px;
+                          line-height:1.65;
+                        "
+                      >
+                        ${opts.welcomeBoxBody}
+                      </div>
+
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- ===================================================== -->
+                <!-- BUTTON                                                  -->
+                <!-- ===================================================== -->
+
+                <table
+                  role="presentation"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                  style="margin:0 0 22px;"
+                >
+                  <tr>
+                    <td>
+
+                      <a
+                        class="email-button"
+                        href="${opts.confirmUrl}"
+                        style="
+                          display:inline-block;
+                          background:${VIVALUX_GREEN};
+                          color:#ffffff;
+                          text-decoration:none;
+                          font-size:14px;
+                          line-height:1;
+                          font-weight:700;
+                          padding:16px 28px;
+                          border-radius:10px;
+                          letter-spacing:0.1px;
+                          box-shadow:0 5px 14px rgba(0,61,47,0.16);
+                        "
+                      >
+                        ${opts.buttonLabel}
+                        &nbsp;&nbsp;→
+                      </a>
+
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Fallback -->
+
+                <p
+                  style="
+                    margin:0 0 24px;
+                    color:#87938F;
+                    font-size:11px;
+                    line-height:1.65;
+                  "
+                >
+                  ${opts.fallbackText}
+                </p>
+
+                <!-- Divider -->
+
+                <div
+                  style="
+                    height:1px;
+                    background:#E7EBE8;
+                    margin:0 0 22px;
+                  "
+                ></div>
+
+                <!-- Security -->
+
+                <p
+                  style="
+                    margin:0;
+                    color:#8A9691;
+                    font-size:11px;
+                    line-height:1.6;
+                  "
+                >
+                  ${opts.footer}
+                </p>
+
+              </td>
+            </tr>
+
+            <!-- ========================================================= -->
+            <!-- FOOTER                                                      -->
+            <!-- ========================================================= -->
+
+            <tr>
+              <td
+                class="email-footer"
+                style="
+                  padding:24px 38px;
+                  background:${VIVALUX_GREEN_DARK};
+                  text-align:center;
+                "
+              >
+
+                <div
+                  style="
+                    margin-bottom:7px;
+                    color:${VIVALUX_GOLD};
+                    font-family:Georgia,'Times New Roman',serif;
+                    font-size:15px;
+                    font-style:italic;
+                  "
+                >
+                  Belgium, beautifully experienced.
+                </div>
+
+                <div
+                  style="
+                    color:rgba(255,255,255,0.48);
+                    font-size:10px;
+                    line-height:1.5;
+                  "
+                >
+                  © VivaLux · Tour Manager
+                </div>
+
+              </td>
+            </tr>
+
+          </table>
+
+        </td>
+      </tr>
+    </table>
+
+  </div>
+</body>
+</html>
   `;
 }
 
@@ -166,61 +562,127 @@ function baseLayout(opts: {
 // =============================================================================
 
 const TEMPLATES: Record<AppLanguage, EmailContent> = {
-  es: {
-    subject: "Confirma tu cuenta — VivaLux",
+  // ---------------------------------------------------------------------------
+  // ESPAÑOL
+  // ---------------------------------------------------------------------------
 
-    html: (url) =>
-      baseLayout({
-        title: "Confirma tu cuenta",
+  es: {
+    subject: "Bienvenido a VivaLux — confirma tu cuenta",
+
+    html: (url, userName) => {
+      const safeName = userName
+        ? escapeHtml(userName.split(" ")[0])
+        : "guía";
+
+      return baseLayout({
+        title: "Bienvenido a VivaLux",
+
+        greeting: `Bienvenido, ${safeName}`,
 
         body:
-          "Gracias por registrarte en VivaLux. Haz clic en el botón para confirmar tu correo electrónico y activar tu cuenta.",
+          "Nos alegra darte la bienvenida a VivaLux. Tu cuenta de guía ya está lista para comenzar a formar parte de nuestra plataforma y gestionar tus tours desde un mismo lugar.",
 
-        buttonLabel: "Confirmar cuenta",
+        welcomeBoxTitle:
+          "Un nuevo espacio para tu día a día",
 
-        confirmUrl: url,
+        welcomeBoxBody:
+          "Desde Tour Manager podrás consultar tus tours, horarios, información de cada servicio y las actualizaciones que necesites, de forma sencilla y organizada.",
+
+        buttonLabel:
+          "Activar mi cuenta",
+
+        confirmUrl:
+          url,
+
+        fallbackText:
+          "Si el botón no funciona, puedes copiar y pegar el enlace de confirmación en tu navegador.",
 
         footer:
-          "Si no has creado esta cuenta, puedes ignorar este correo con tranquilidad.",
-      }),
+          "Por seguridad, este enlace es personal y solo debe utilizarse para activar tu cuenta. Si no has solicitado este registro, puedes ignorar este correo con tranquilidad.",
+      });
+    },
   },
+
+  // ---------------------------------------------------------------------------
+  // DUTCH
+  // ---------------------------------------------------------------------------
 
   nl: {
-    subject: "Bevestig je account — VivaLux",
+    subject: "Welkom bij VivaLux — bevestig je account",
 
-    html: (url) =>
-      baseLayout({
-        title: "Bevestig je account",
+    html: (url, userName) => {
+      const safeName = userName
+        ? escapeHtml(userName.split(" ")[0])
+        : "gids";
+
+      return baseLayout({
+        title: "Welkom bij VivaLux",
+
+        greeting: `Welkom, ${safeName}`,
 
         body:
-          "Bedankt voor je registratie bij VivaLux. Klik op de knop om je e-mailadres te bevestigen en je account te activeren.",
+          "We zijn blij je welkom te mogen heten bij VivaLux. Je gidsaccount staat klaar om deel uit te maken van ons platform en je tours vanuit één centrale omgeving te beheren.",
 
-        buttonLabel: "Account bevestigen",
+        welcomeBoxTitle:
+          "Een nieuwe plek voor je dagelijkse planning",
 
-        confirmUrl: url,
+        welcomeBoxBody:
+          "Via Tour Manager kun je je tours, planning, servicegegevens en belangrijke updates eenvoudig en overzichtelijk raadplegen.",
+
+        buttonLabel:
+          "Mijn account activeren",
+
+        confirmUrl:
+          url,
+
+        fallbackText:
+          "Werkt de knop niet? Kopieer en plak dan de bevestigingslink in je browser.",
 
         footer:
-          "Als je dit account niet hebt aangemaakt, kun je deze e-mail negeren.",
-      }),
+          "Deze link is persoonlijk en dient alleen om je account te activeren. Heb je dit account niet aangevraagd, dan kun je deze e-mail gerust negeren.",
+      });
+    },
   },
 
-  en: {
-    subject: "Confirm your account — VivaLux",
+  // ---------------------------------------------------------------------------
+  // ENGLISH
+  // ---------------------------------------------------------------------------
 
-    html: (url) =>
-      baseLayout({
-        title: "Confirm your account",
+  en: {
+    subject: "Welcome to VivaLux — confirm your account",
+
+    html: (url, userName) => {
+      const safeName = userName
+        ? escapeHtml(userName.split(" ")[0])
+        : "guide";
+
+      return baseLayout({
+        title: "Welcome to VivaLux",
+
+        greeting: `Welcome, ${safeName}`,
 
         body:
-          "Thanks for signing up with VivaLux. Click the button below to confirm your email address and activate your account.",
+          "We are delighted to welcome you to VivaLux. Your guide account is ready, giving you access to our platform and everything you need to manage your tours from one place.",
 
-        buttonLabel: "Confirm account",
+        welcomeBoxTitle:
+          "A new space for your daily work",
 
-        confirmUrl: url,
+        welcomeBoxBody:
+          "With Tour Manager, you can easily access your tours, schedules, service information and important updates in one clear and organised environment.",
+
+        buttonLabel:
+          "Activate my account",
+
+        confirmUrl:
+          url,
+
+        fallbackText:
+          "If the button does not work, copy and paste the confirmation link into your browser.",
 
         footer:
-          "If you didn't create this account, you can safely ignore this email.",
-      }),
+          "For your security, this link is personal and should only be used to activate your account. If you did not request this account, you can safely ignore this email.",
+      });
+    },
   },
 };
 
@@ -267,11 +729,15 @@ Deno.serve(async (req) => {
       Deno.env.get("SEND_EMAIL_AUTH_GUIDE_HOOK_SECRET") ?? ""
     ).replace("v1,whsec_", "");
 
-    const resendApiKey = Deno.env.get("RESEND_API_KEY_AUTH_GUIDE") ?? "";
+    const resendApiKey =
+      Deno.env.get("RESEND_API_KEY_AUTH_GUIDE") ?? "";
 
-    // Sender fijo de este sistema.
-    // El dominio vivalux.tour debe estar verificado en Resend.
-    const emailFrom = "VivaLux <noreply@vivalux.tours>";
+    const emailFrom =
+      "VivaLux <noreply@vivalux.tours>";
+
+    // -------------------------------------------------------------------------
+    // Validación de secrets
+    // -------------------------------------------------------------------------
 
     if (!hookSecret) {
       throw new Error(
@@ -302,7 +768,10 @@ Deno.serve(async (req) => {
     let payload: HookPayload;
 
     try {
-      payload = wh.verify(rawBody, headers) as HookPayload;
+      payload = wh.verify(
+        rawBody,
+        headers,
+      ) as HookPayload;
     } catch {
       return new Response(
         JSON.stringify({
@@ -331,17 +800,6 @@ Deno.serve(async (req) => {
 
     // -------------------------------------------------------------------------
     // Idioma
-    //
-    // AuthContext ya guarda:
-    //
-    // options: {
-    //   data: {
-    //     full_name: fullName,
-    //     preferred_language: language,
-    //   },
-    // }
-    //
-    // Por tanto aquí recuperamos preferred_language directamente.
     // -------------------------------------------------------------------------
 
     const lang = resolveLanguage(
@@ -351,10 +809,30 @@ Deno.serve(async (req) => {
     const template = TEMPLATES[lang];
 
     // -------------------------------------------------------------------------
+    // Nombre del guía
+    // -------------------------------------------------------------------------
+
+    const userName = getUserName(
+      user.user_metadata,
+    );
+
+    // -------------------------------------------------------------------------
     // Construir enlace de confirmación
     // -------------------------------------------------------------------------
 
-    const confirmUrl = buildConfirmUrl(email_data);
+    const confirmUrl = buildConfirmUrl(
+      email_data,
+    );
+
+    // -------------------------------------------------------------------------
+    // Generar HTML
+    // -------------------------------------------------------------------------
+
+    const html = template.html(
+      confirmUrl,
+      userName,
+      user.email,
+    );
 
     // -------------------------------------------------------------------------
     // Enviar mediante Resend
@@ -374,10 +852,14 @@ Deno.serve(async (req) => {
           from: emailFrom,
           to: [user.email],
           subject: template.subject,
-          html: template.html(confirmUrl),
+          html,
         }),
       },
     );
+
+    // -------------------------------------------------------------------------
+    // Error de Resend
+    // -------------------------------------------------------------------------
 
     if (!sendRes.ok) {
       throw new Error(
@@ -393,23 +875,32 @@ Deno.serve(async (req) => {
       JSON.stringify({}),
       {
         status: 200,
+
         headers: {
           "Content-Type": "application/json",
         },
       },
     );
+
   } catch (error) {
-    console.error("send-email-auth-guide error:", error);
+    console.error(
+      "send-email-auth-guide error:",
+      error,
+    );
 
     return new Response(
       JSON.stringify({
         error: {
           http_code: 500,
-          message: error instanceof Error ? error.message : String(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : String(error),
         },
       }),
       {
         status: 500,
+
         headers: {
           "Content-Type": "application/json",
         },

@@ -7,7 +7,7 @@ import { FileSpreadsheet } from "lucide-react";
 interface BoardDayProps {
   selectedDate: string;
   events: CalendarEvent[];
-  onUploadDocument: () => void;
+  onUploadDocument?: () => void;
   onSelectEvent: (eventId: string) => void;
 }
 

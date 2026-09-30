@@ -244,7 +244,7 @@ function GuideSlotRow({
       </span>
 
       {current ? (
-        <div className="flex items-start sm:items-center gap-2 flex-1 min-w-0 flex-wrap">
+        <div className="flex items-start sm:items-center gap-2 flex-1 min-w-0 flex-wrap ">
           <span className="text-sm font-bold truncate">{current.name}</span>
           {assignment && <StatusBadge status={assignment.status} />}
           {current.phone && (
@@ -565,7 +565,7 @@ export default function EventBody({
     <div className="w-full min-w-0 bg-base-100">
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] gap-3 lg:gap-4 p-0 lg:p-4">
         {/* ── Columna izquierda: datos del tour ── */}
-        <section className="min-w-0 overflow-hidden rounded-none lg:rounded-2xl border-y lg:border border-base-content/10 bg-base-100 shadow-none lg:shadow-sm">
+        <section className="min-w-0 overflow-hidden rounded-none lg:rounded-2xl border-y lg:border border-base-content/10 bg-base-100 [html[data-theme='light']_&]:bg-white shadow-none lg:shadow-sm">
           <div className="px-4 sm:px-5 pt-4 pb-2">
             <h2 className="text-xs font-extrabold uppercase tracking-[0.12em] opacity-45">
               Tour info
@@ -807,7 +807,7 @@ export default function EventBody({
         </section>
 
         {/* ── Columna derecha: guías + multimedia ── */}
-        <section className="min-w-0 flex flex-col overflow-hidden rounded-none lg:rounded-2xl border-y lg:border border-base-content/10 bg-base-100 shadow-none lg:shadow-sm">
+        <section className="min-w-0 flex flex-col overflow-hidden rounded-none lg:rounded-2xl border-y lg:border border-base-content/10 bg-base-100 shadow-none lg:shadow-sm bg-base-100 [html[data-theme='light']_&]:bg-white">
           {/* ── Guías asignados (colapsable) ── */}
           <div>
             <button
