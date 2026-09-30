@@ -162,7 +162,7 @@ export default function ProfileMenu({
     setSavingName(true);
     await supabase
       .from("profiles")
-      .update({ full_name: name.trim() })
+      .update({ name: name.trim() })
       .eq("id", profile.id);
     setSavingName(false);
     setShowEditModal(false);
