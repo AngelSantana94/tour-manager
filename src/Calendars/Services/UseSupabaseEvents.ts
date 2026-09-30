@@ -4,10 +4,10 @@ import {
   createTour,
   deleteTour,
   fetchTours,
+  type GuideSlot,
   removeGuideFromTour,
   supabase,
   updateTour,
-  type GuideSlot,
 } from "./Supabase.adapter";
 import type { CalendarEvent } from "../CreateEventModal";
 
@@ -39,6 +39,16 @@ export function useSupabaseEvents() {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  // CAMBIO: guarda de "respuesta más reciente gana", no "la que llega
+  // última gana". Si asignas dos guías seguidos (lead y luego back-up), cada
+  // asignación dispara su propio loadEvents() — más el que dispara Realtime
+  // solo por haber cambiado la fila — y esas llamadas pueden resolverse
+  // fuera de orden. Sin esto, un fetchTours() más viejo que responde tarde
+  // pisaba el estado ya actualizado con uno más nuevo (el mismo patrón "N-1"
+  // que vimos en el Sheet). Cada loadEvents() se numera; si al volver ya no
+  // es el último disparado, se descarta su resultado.
+  const requestIdRef = useRef(0);
+
   // Evita recargar de golpe si Realtime dispara varios cambios seguidos
   // (por ejemplo, al correr la importación del Sheet sobre muchos tours a la vez).
   function scheduleReload() {
@@ -48,17 +58,20 @@ export function useSupabaseEvents() {
 
   // ── FETCH ────────────────────────────────────────────────────────────────
   async function loadEvents(showSpinner = false) {
+    const reqId = ++requestIdRef.current;
     if (showSpinner) setLoading(true);
     try {
       const data = await fetchTours();
+      if (reqId !== requestIdRef.current) return; // una llamada más nueva ya está en curso/resuelta
       writeCache(data);
       setEvents(data);
       setError(null);
     } catch (err) {
+      if (reqId !== requestIdRef.current) return;
       const msg = err instanceof Error ? err.message : "Error desconocido";
       setError(msg);
     } finally {
-      setLoading(false);
+      if (reqId === requestIdRef.current) setLoading(false);
     }
   }
 
@@ -74,9 +87,12 @@ export function useSupabaseEvents() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tours" },
-        () => {
-          scheduleReload();
-        },
+        () => scheduleReload(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tour_assignments" },
+        () => scheduleReload(),
       )
       .subscribe();
 
@@ -152,7 +168,7 @@ export function useSupabaseEvents() {
       meeting_point: string;
       status: string;
       notes: string;
-      period: string; 
+      period: string;
       provider_id: string | null;
       tour_operator_id: string | null;
       tour_leader_id: string | null;
@@ -164,20 +180,20 @@ export function useSupabaseEvents() {
       const u = prev.map((e) =>
         e.id === id
           ? {
-              ...e,
-              tour: data.tour_type ?? e.tour,
-              date: data.date ?? e.date,
-              time: data.start_time ? data.start_time.slice(0, 5) : e.time,
-              meta: {
-                ...e.meta,
-                city: data.city ?? e.meta?.city,
-                pax: data.pax ?? e.meta?.pax,
-                meetingPoint: data.meeting_point ?? e.meta?.meetingPoint,
-                status: data.status ?? e.meta?.status,
-                notes: data.notes ?? e.meta?.notes,
-                period: data.period ?? e.meta?.period, // ← nuevo
-              },
-            }
+            ...e,
+            tour: data.tour_type ?? e.tour,
+            date: data.date ?? e.date,
+            time: data.start_time ? data.start_time.slice(0, 5) : e.time,
+            meta: {
+              ...e.meta,
+              city: data.city ?? e.meta?.city,
+              pax: data.pax ?? e.meta?.pax,
+              meetingPoint: data.meeting_point ?? e.meta?.meetingPoint,
+              status: data.status ?? e.meta?.status,
+              notes: data.notes ?? e.meta?.notes,
+              period: data.period ?? e.meta?.period, // ← nuevo
+            },
+          }
           : e
       );
       writeCache(u);

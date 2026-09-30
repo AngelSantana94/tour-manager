@@ -43,7 +43,7 @@ export default function GuideButton({
     <button
       type="button"
       onClick={() => onClick?.(id)}
-      className="group w-full text-left bg-base-100 border border-base-content/10 rounded-2xl p-5 flex items-center gap-4 hover:shadow-sm hover:border-primary/20 transition-all cursor-pointer"
+      className="group w-full text-left bg-base-100 border border-base-content/10 rounded-2xl p-5 flex items-center gap-4 hover:shadow-sm hover:border-primary/20 transition-all cursor-pointer bg-base-100 [html[data-theme='light']_&]:bg-white"
     >
       {/* Avatar */}
       <div

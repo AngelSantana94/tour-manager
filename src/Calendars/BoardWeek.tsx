@@ -153,9 +153,9 @@ export default function BoardWeek({
   );
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden bg-base-100 [html[data-theme='light']_&]:bg-white">
       <div
-        className="grid border-b border-base-content/10 bg-base-100 flex-none"
+        className="grid border-b border-base-content/10 bg-base-100 [html[data-theme='light']_&]:bg-white flex-none"
         style={{ gridTemplateColumns: "72px repeat(7, minmax(0, 1fr))" }}
       >
         <div className="h-12 border-r border-base-content/5 flex items-center justify-center">

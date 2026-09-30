@@ -1,20 +1,24 @@
 import { useEffect, useState } from "react";
-import Navbar       from "./Navigation/Navbar";
-import Sidebar      from "./Navigation/Sidebar";
-import MobileMenu   from "./Navigation/MobileMenu";
+import Navbar from "./Navigation/Navbar";
+import Sidebar from "./Navigation/Sidebar";
+import MobileMenu from "./Navigation/MobileMenu";
 import CalendarView from "../Calendars/CalendarView";
-import Consultor    from "./Navigation/Consultor";
-import MetricsView  from "../Metrics/MetricsView";
+import Consultor from "./Navigation/Consultor";
+import MetricsView from "../Metrics/MetricsView";
 import GuideAvailabilityBase from "../Availability/GuideAvailabilityBase";
-import GuidesView   from "../guides/GuidesView";
-import Voucher      from "../Voucher/GenerarVoucher";
+import GuidesView from "../guides/GuidesView";
+import BillingView from "../Billing/BillingView";
+import Voucher from "../Billing/Voucher/GenerarVoucher";
+import DirectoryView from "../Directory/DirectoryView"; // ← nuevo
 
 export type ActiveView =
   | "calendario"
   | "metricas"
   | "disponibilidad"
   | "guias"
-  | "voucher";
+  | "facturacion"
+  | "voucher"
+  | "directorio"; // ← nuevo
 
 function DashboardLayout() {
   const [activeView, setActiveView] = useState<ActiveView>("calendario");
@@ -25,23 +29,38 @@ function DashboardLayout() {
       document.documentElement.setAttribute("data-theme", saved);
     } else {
       const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
+      document.documentElement.setAttribute(
+        "data-theme",
+        isDark ? "dark" : "light",
+      );
     }
   }, []);
 
   const renderView = () => {
     switch (activeView) {
-      case "metricas":    return <MetricsView />;
-      case "calendario":  return <CalendarView />;
-      case "disponibilidad":    return <GuideAvailabilityBase />;
-      case "guias":       return <GuidesView />;
-      case "voucher":      return <Voucher />;
-      default: return (
-        <div className="flex flex-col items-center justify-center h-64 gap-2 opacity-20">
-          <span className="text-4xl">🚧</span>
-          <span className="text-sm font-medium capitalize">{activeView} — próximamente</span>
-        </div>
-      );
+      case "metricas":
+        return <MetricsView />;
+      case "calendario":
+        return <CalendarView />;
+      case "disponibilidad":
+        return <GuideAvailabilityBase />;
+      case "guias":
+        return <GuidesView />;
+      case "facturacion":
+        return <BillingView />;
+      case "voucher":
+        return <Voucher />;
+      case "directorio": // ← nuevo
+        return <DirectoryView />;
+      default:
+        return (
+          <div className="flex flex-col items-center justify-center h-64 gap-2 opacity-20">
+            <span className="text-4xl">🚧</span>
+            <span className="text-sm font-medium capitalize">
+              {activeView} — próximamente
+            </span>
+          </div>
+        );
     }
   };
 
@@ -57,6 +76,8 @@ function DashboardLayout() {
         </div>
         <Sidebar activeView={activeView} onNavigate={setActiveView} />
       </div>
+      {/* MobileMenu se deja tal cual, a propósito: "directorio" no entra
+          ahí todavía (no cabe / no hace falta en móvil por ahora). */}
       <div className="lg:hidden">
         <MobileMenu activeView={activeView} onNavigate={setActiveView} />
       </div>

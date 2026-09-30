@@ -230,7 +230,7 @@ export default function EventPage({
         togglingCancel={savingStatus}
       />
 
-      <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 max-w-2xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-5 flex flex-col gap-4 max-w-6xl mx-auto w-full">
         {/* ── Banner ── */}
         <div className="rounded-2xl overflow-hidden shadow-sm border border-base-content/10">
           <div
@@ -256,10 +256,12 @@ export default function EventPage({
               <div className="w-11 h-11 rounded-full bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
                 <MapIcon size={20} className="text-white" />
               </div>
+
               <div className="flex flex-col min-w-0 pr-24">
                 <h1 className="text-lg font-black text-white leading-tight truncate uppercase">
                   {event.tour}
                 </h1>
+
                 {editing ? (
                   <input
                     type="date"
@@ -274,6 +276,7 @@ export default function EventPage({
                     {formatDateOnly(event.date)}
                   </span>
                 )}
+
                 <span className="text-[11px] text-white/40 font-mono mt-0.5">
                   ID: {(meta.serviceId as string) || event.id}
                 </span>
@@ -284,6 +287,7 @@ export default function EventPage({
               <span className="text-[10px] font-bold text-white/60 uppercase tracking-widest">
                 Periodo
               </span>
+
               <select
                 value={period}
                 disabled={savingPeriod}
@@ -296,6 +300,7 @@ export default function EventPage({
                   </option>
                 ))}
               </select>
+
               {savingPeriod && (
                 <span className="loading loading-spinner loading-xs text-white" />
               )}

@@ -9,6 +9,7 @@ import {
 import {
   setAvailabilityDays,
   type AvailabilityStatus,
+  type AvailabilityShift,
 } from "./Services/Availability.adapter";
 
 interface AvailabilityPickerModalProps {
@@ -67,6 +68,7 @@ export default function AvailabilityPickerModal({
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  const [selectedShift, setSelectedShift] = useState<AvailabilityShift>("FULL");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -106,7 +108,12 @@ export default function AvailabilityPickerModal({
     if (selectedDates.size === 0) return;
     setSaving(true);
     try {
-      await setAvailabilityDays(guideId, [...selectedDates], mode);
+      await setAvailabilityDays(
+        guideId,
+        [...selectedDates],
+        mode,
+        selectedShift,
+      );
       onSaved();
       handleClose();
     } finally {
@@ -164,6 +171,59 @@ export default function AvailabilityPickerModal({
               : "quieres bloquear (vacaciones, etc.)"}
             . Puedes elegir varios días sueltos.
           </p>
+
+          {isAvailable && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-gray-700">
+                Selecciona turno:
+              </span>
+
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedShift("AM")}
+                  className={[
+                    "h-10 rounded-full border text-xs font-semibold transition-all",
+                    selectedShift === "AM"
+                      ? "bg-teal-500 text-white border-teal-500 shadow-sm"
+                      : "bg-white text-teal-700 border-teal-300 hover:bg-teal-50",
+                  ].join(" ")}
+                >
+                  Mañana (AM)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedShift("PM")}
+                  className={[
+                    "h-10 rounded-full border text-xs font-semibold transition-all",
+                    selectedShift === "PM"
+                      ? "bg-teal-500 text-white border-teal-500 shadow-sm"
+                      : "bg-white text-teal-700 border-teal-300 hover:bg-teal-50",
+                  ].join(" ")}
+                >
+                  Tarde (PM)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedShift("FULL")}
+                  className={[
+                    "h-10 rounded-full border text-xs font-semibold transition-all",
+                    selectedShift === "FULL"
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                      : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50",
+                  ].join(" ")}
+                >
+                  Día completo
+                </button>
+              </div>
+
+              <p className="text-[10px] text-center text-gray-400">
+                El turno seleccionado se aplicará a todos los días que marques.
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center justify-between">
             <button

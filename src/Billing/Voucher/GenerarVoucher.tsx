@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Download, Share2, Trash2 } from "lucide-react";
-import { useAuth } from "../login/AuthContext";
+import { useAuth } from "../../login/AuthContext";
 // Cliente real de Supabase (base de datos OTA) — mismo que usa el resto
 // de la app, importado directamente de su origen en vez de pasar por el
 // adaptador del calendario para no acoplar el voucher a ese módulo.
-import { supabase } from "../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
 
 interface VoucherFormData {
   empresa: string;

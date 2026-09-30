@@ -1,5 +1,6 @@
 import NotificationBell from "../../Notifications/NotificationBell";
 import ProfileMenu from "./ProfilMenu";
+import LanguageSwitch from "./LanguageSwitch";
 
 export default function Navbar() {
   return (
@@ -19,6 +20,7 @@ export default function Navbar() {
 
         {/* Derecha */}
         <div className="flex items-center gap-3">
+          <LanguageSwitch />
           <NotificationBell />
           <div className="pl-3 border-l border-base-content/10">
             <ProfileMenu side="right" />
@@ -32,7 +34,8 @@ export default function Navbar() {
           <span className="text-primary">Tour</span>
           <span className="text-base-content">Manager</span>
         </span>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <LanguageSwitch />
           <div className="scale-110">
             <NotificationBell />
           </div>

@@ -10,7 +10,9 @@ interface BoardMonthProps {
   eventsByDate?: Record<string, CalendarEvent[]>;
 }
 
-function pad(n: number) { return String(n).padStart(2, "0"); }
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
 
 function getTodayStr() {
   const now = new Date();
@@ -19,41 +21,53 @@ function getTodayStr() {
 
 interface Cell {
   dateStr: string;
-  day:     number;
-  filler:  boolean; // true = día de mes anterior o siguiente
+  day: number;
+  filler: boolean; // true = día de mes anterior o siguiente
 }
 
 function buildCells(year: number, month: number): Cell[] {
-  const firstDow    = new Date(year, month, 1).getDay();
+  const firstDow = new Date(year, month, 1).getDay();
   const startOffset = (firstDow + 6) % 7; // lunes = 0
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   // Mes anterior
-  const prevYear  = month === 0  ? year - 1 : year;
-  const prevMonth = month === 0  ? 11       : month - 1;
+  const prevYear = month === 0 ? year - 1 : year;
+  const prevMonth = month === 0 ? 11 : month - 1;
   const daysInPrev = new Date(prevYear, prevMonth + 1, 0).getDate();
 
   // Mes siguiente
-  const nextYear  = month === 11 ? year + 1 : year;
-  const nextMonth = month === 11 ? 0        : month + 1;
+  const nextYear = month === 11 ? year + 1 : year;
+  const nextMonth = month === 11 ? 0 : month + 1;
 
   const cells: Cell[] = [];
 
   // Relleno inicio — días del mes anterior
   for (let i = startOffset - 1; i >= 0; i--) {
     const d = daysInPrev - i;
-    cells.push({ dateStr: `${prevYear}-${pad(prevMonth + 1)}-${pad(d)}`, day: d, filler: true });
+    cells.push({
+      dateStr: `${prevYear}-${pad(prevMonth + 1)}-${pad(d)}`,
+      day: d,
+      filler: true,
+    });
   }
 
   // Días del mes actual
   for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ dateStr: `${year}-${pad(month + 1)}-${pad(d)}`, day: d, filler: false });
+    cells.push({
+      dateStr: `${year}-${pad(month + 1)}-${pad(d)}`,
+      day: d,
+      filler: false,
+    });
   }
 
   // Relleno final — días del mes siguiente
   let nextDay = 1;
   while (cells.length % 7 !== 0) {
-    cells.push({ dateStr: `${nextYear}-${pad(nextMonth + 1)}-${pad(nextDay)}`, day: nextDay, filler: true });
+    cells.push({
+      dateStr: `${nextYear}-${pad(nextMonth + 1)}-${pad(nextDay)}`,
+      day: nextDay,
+      filler: true,
+    });
     nextDay++;
   }
 
@@ -65,40 +79,54 @@ export default function BoardMonth({
   onSelectDate,
   eventsByDate = {},
 }: BoardMonthProps) {
-  const todayStr  = getTodayStr();
+  const todayStr = getTodayStr();
   const todayDate = new Date(todayStr + "T00:00:00");
 
-  const [viewYear,  setViewYear]  = useState(todayDate.getFullYear());
+  const [viewYear, setViewYear] = useState(todayDate.getFullYear());
   const [viewMonth, setViewMonth] = useState(todayDate.getMonth());
 
   const activeDate = selectedDate ?? todayStr;
 
   function prevMonth() {
-    if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); }
-    else setViewMonth((m) => m - 1);
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear((y) => y - 1);
+    } else setViewMonth((m) => m - 1);
   }
 
   function nextMonth() {
-    if (viewMonth === 11) { setViewMonth(0); setViewYear((y) => y + 1); }
-    else setViewMonth((m) => m + 1);
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear((y) => y + 1);
+    } else setViewMonth((m) => m + 1);
   }
 
-  const cells    = buildCells(viewYear, viewMonth);
+  const cells = buildCells(viewYear, viewMonth);
   const monthName = new Date(viewYear, viewMonth, 1).toLocaleString("es-ES", {
-    month: "long", year: "numeric",
+    month: "long",
+    year: "numeric",
   });
 
   return (
     <div className="flex flex-col items-center gap-4 w-full">
-      <div className="bg-base-100 w-full max-w-[260px] rounded-2xl p-3 border border-base-content/10 shadow-sm">
-
+      <div className="bg-base-100 [html[data-theme='light']_&]:bg-white w-full max-w-[260px] rounded-2xl p-3 border border-base-content/10 shadow-sm">
         {/* Cabecera navegación */}
         <div className="flex items-center justify-between px-1 mb-3">
-          <button onClick={prevMonth} className="btn btn-ghost btn-xs btn-square" aria-label="Mes anterior">
+          <button
+            onClick={prevMonth}
+            className="btn btn-ghost btn-xs btn-square"
+            aria-label="Mes anterior"
+          >
             <ChevronLeft size={18} strokeWidth={2.5} className="opacity-70" />
           </button>
-          <span className="text-[11px] font-semibold capitalize opacity-70">{monthName}</span>
-          <button onClick={nextMonth} className="btn btn-ghost btn-xs btn-square" aria-label="Mes siguiente">
+          <span className="text-[11px] font-semibold capitalize opacity-70">
+            {monthName}
+          </span>
+          <button
+            onClick={nextMonth}
+            className="btn btn-ghost btn-xs btn-square"
+            aria-label="Mes siguiente"
+          >
             <ChevronRight size={18} strokeWidth={2.5} className="opacity-70" />
           </button>
         </div>
@@ -106,16 +134,21 @@ export default function BoardMonth({
         {/* Días de la semana */}
         <div className="grid grid-cols-7 mb-1">
           {DAYS.map((d) => (
-            <div key={d} className="text-center text-[9px] font-bold uppercase opacity-30 py-1">{d}</div>
+            <div
+              key={d}
+              className="text-center text-[9px] font-bold uppercase opacity-30 py-1"
+            >
+              {d}
+            </div>
           ))}
         </div>
 
         {/* Celdas */}
         <div className="grid grid-cols-7 gap-y-0.5">
           {cells.map((cell) => {
-            const isToday    = cell.dateStr === todayStr;
+            const isToday = cell.dateStr === todayStr;
             const isSelected = cell.dateStr === activeDate;
-            const hasEvents  = (eventsByDate[cell.dateStr]?.length ?? 0) > 0;
+            const hasEvents = (eventsByDate[cell.dateStr]?.length ?? 0) > 0;
 
             return (
               <div key={cell.dateStr} className="flex justify-center">
@@ -128,10 +161,10 @@ export default function BoardMonth({
                     cell.filler
                       ? "opacity-25 hover:opacity-40"
                       : isSelected
-                      ? "bg-primary text-primary-content shadow-md scale-105"
-                      : isToday
-                      ? "bg-primary/10 text-primary font-bold ring-1 ring-primary/30"
-                      : "hover:bg-base-content/5 opacity-70 hover:opacity-100",
+                        ? "bg-primary text-primary-content shadow-md scale-105"
+                        : isToday
+                          ? "bg-primary/10 text-primary font-bold ring-1 ring-primary/30"
+                          : "hover:bg-base-content/5 opacity-70 hover:opacity-100",
                   ].join(" ")}
                 >
                   <span className="leading-none mt-1">{cell.day}</span>

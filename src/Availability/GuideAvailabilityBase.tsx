@@ -11,6 +11,7 @@ import {
   fetchAvailabilityForRange,
   fetchGuideIdForCurrentUser,
   type AvailabilityStatus,
+  type GuideAvailability,
 } from "./Services/Availability.adapter";
 import AvailabilityPickerModal from "./AvailabilityPickerModal";
 
@@ -60,7 +61,7 @@ export default function GuideAvailabilityBase() {
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [availability, setAvailability] = useState<
-    Record<string, AvailabilityStatus>
+    Record<string, GuideAvailability>
   >({});
   const [loading, setLoading] = useState(true);
 
@@ -111,7 +112,7 @@ export default function GuideAvailabilityBase() {
     let availableCount = 0;
     let blockedCount = 0;
 
-    Object.values(availability).forEach((status) => {
+    Object.values(availability).forEach(({ status }) => {
       if (status === "available") availableCount++;
       if (status === "blocked") blockedCount++;
     });
@@ -262,34 +263,55 @@ export default function GuideAvailabilityBase() {
             if (!date) return <div key={`e-${i}`} className="h-9 sm:h-11" />;
             const iso = toISODate(date);
             const isToday = iso === todayISO;
-            const status = availability[iso];
+            const dayAvailability = availability[iso];
+            const status = dayAvailability?.status;
+            const shift = dayAvailability?.shift;
 
             return (
               <div
                 key={iso}
                 className={[
                   "h-9 sm:h-11 rounded-xl text-xs font-medium flex flex-col items-center justify-center transition-all cursor-pointer relative",
-                  status === "available"
+                  status === "available" && shift === "FULL"
                     ? "bg-emerald-50 text-emerald-800 border border-emerald-200/60 hover:bg-emerald-100"
                     : "",
+
+                  status === "available" && shift !== "FULL"
+                    ? "bg-teal-50 text-teal-800 border border-teal-200/60 hover:bg-teal-100"
+                    : "",
+
                   status === "blocked"
                     ? "bg-rose-50 text-rose-800 border border-rose-200/60 hover:bg-rose-100"
                     : "",
+
                   !status
                     ? "bg-gray-50/70 text-gray-700 hover:bg-gray-100/80 border border-transparent"
-                    : "",
-                  isToday
-                    ? "ring-2 ring-emerald-600 ring-offset-1 font-bold"
                     : "",
                 ].join(" ")}
               >
                 <span className="leading-none">{date.getDate()}</span>
 
-                {/* Subetiqueta: oculta el texto en móvil (hidden) y solo lo muestra en tablets/portátiles (sm:inline) */}
                 {status === "available" && (
-                  <span className="text-[8px] text-emerald-700 font-semibold flex items-center gap-0.5 mt-0.5 scale-90">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                    <span className="hidden sm:inline">Disponible</span>
+                  <span
+                    className={[
+                      "text-[8px] font-semibold flex items-center gap-0.5 mt-0.5 scale-90",
+                      shift === "FULL" ? "text-emerald-700" : "text-teal-700",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "w-1.5 h-1.5 rounded-full shrink-0",
+                        shift === "FULL" ? "bg-emerald-500" : "bg-teal-500",
+                      ].join(" ")}
+                    />
+
+                    <span className="hidden sm:inline">
+                      {shift === "AM"
+                        ? "Disp AM"
+                        : shift === "PM"
+                          ? "Disp PM"
+                          : "Disponible"}
+                    </span>
                   </span>
                 )}
 
@@ -332,7 +354,7 @@ export default function GuideAvailabilityBase() {
                 <b className="w-4 h-4 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center text-[9px]">
                   1
                 </b>
-                Haz clic en un día para editar su estado.
+                Haz clic en añadir disponibilidad para editar su estado.
               </span>
               <span>›</span>
               <span className="flex items-center gap-1">

@@ -4,22 +4,14 @@ import BoardWeek from "./BoardWeek";
 import BoardDay from "./BoardDay";
 import CalendarHeader from "./CalendarHeader";
 import MobileHeader from "./MobileHeader";
-import CreateEventModal from "./CreateEventModal";
-import UploadTourDocumentModal from "./UploadTourDocumentModal";
 import EventPage from "./Events/EventPage";
 import { useSupabaseEvents } from "./Services/UseSupabaseEvents";
 import type { CalendarEvent } from "./CreateEventModal";
+import GuideAvailabilityPanel from "./GuideAvailabilityPanel";
 
 export type CalendarView = "week" | "day";
 
-// Un guía visto desde el filtro: puede aparecer como lead o como back-up
-interface GuideOption {
-  id: string;
-  name: string;
-}
-
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-
 function pad(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -33,27 +25,7 @@ function shiftDate(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const date = new Date(y, m - 1, d);
   date.setDate(date.getDate() + days);
-
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}`;
-}
-
-// Guías asignados a un tour, sin duplicar si la misma persona ocupa dos puestos
-function eventGuides(event: CalendarEvent): GuideOption[] {
-  const candidates = [
-    event.meta?.guideLead,
-    event.meta?.backup1,
-    event.meta?.backup2,
-  ] as ({ id: string; name: string } | null | undefined)[];
-
-  const byId = new Map<string, GuideOption>();
-
-  for (const g of candidates) {
-    if (g) byId.set(g.id, { id: g.id, name: g.name });
-  }
-
-  return [...byId.values()];
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function formatHeaderLabel(dateStr: string, view: CalendarView): string {
@@ -69,49 +41,28 @@ function formatHeaderLabel(dateStr: string, view: CalendarView): string {
   }
 
   const dow = date.getDay();
-
   const monday = new Date(date);
   monday.setDate(date.getDate() - ((dow + 6) % 7));
-
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
 
   if (monday.getMonth() === sunday.getMonth()) {
-    return `${monday.getDate()} – ${sunday.getDate()} ${monday.toLocaleDateString(
-      "es-ES",
-      {
-        month: "long",
-        year: "numeric",
-      },
-    )}`;
+    return `${monday.getDate()} – ${sunday.getDate()} ${monday.toLocaleDateString("es-ES", { month: "long", year: "numeric" })}`;
   }
-
-  return `${monday.getDate()} ${monday.toLocaleDateString("es-ES", {
-    month: "short",
-  })} – ${sunday.getDate()} ${sunday.toLocaleDateString("es-ES", {
-    month: "short",
-    year: "numeric",
-  })}`;
+  return `${monday.getDate()} ${monday.toLocaleDateString("es-ES", { month: "short" })} – ${sunday.getDate()} ${sunday.toLocaleDateString("es-ES", { month: "short", year: "numeric" })}`;
 }
 
 // ─── COMPONENTE ──────────────────────────────────────────────────────────────
-
 function CalendarView() {
   const today = getTodayStr();
-
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [view, setView] = useState<CalendarView>("week");
-
-  // Modal de creación manual
-  const [modalOpen, setModalOpen] = useState(false);
-
-  // Modal de carga de Excel/documento
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
-
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   // ── Filtros ──────────────────────────────────────────────────────────────
-  const [selectedGuideId, setSelectedGuideId] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState("");
+  const [selectedOperator, setSelectedOperator] = useState("");
 
   // ── Fuente de datos unificada ────────────────────────────────────────────
   const {
@@ -119,53 +70,63 @@ function CalendarView() {
     loading,
     error,
     refetch,
-    addEvent,
     updateEvent,
     removeEvent,
     assignGuide,
     unassignGuide,
   } = useSupabaseEvents();
 
-  // ── Listas únicas para los filtros ───────────────────────────────────────
-
-  const guides: GuideOption[] = useMemo(() => {
-    const byId = new Map<string, GuideOption>();
-
-    for (const e of events) {
-      for (const g of eventGuides(e)) {
-        byId.set(g.id, g);
-      }
-    }
-
-    return [...byId.values()].sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
+  const cities = useMemo(() => {
+    return [
+      ...new Set(
+        events
+          .map((e) => e.meta?.city)
+          .filter((city): city is string => Boolean(city)),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
   }, [events]);
 
-  // ── Eventos filtrados ───────────────────────────────────────────────────
+  const providers = useMemo(() => {
+    return [
+      ...new Set(
+        events
+          .map((e) => e.meta?.providerName)
+          .filter((provider): provider is string => Boolean(provider)),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+  }, [events]);
+
+  const operators = useMemo(() => {
+    return [
+      ...new Set(
+        events
+          .map((e) => e.meta?.operatorName)
+          .filter((operator): operator is string => Boolean(operator)),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+  }, [events]);
 
   const filteredEvents = useMemo(() => {
-    if (!selectedGuideId) return events;
+    return events.filter((event) => {
+      const matchesCity = !selectedCity || event.meta?.city === selectedCity;
 
-    return events.filter((e) =>
-      eventGuides(e).some((g) => g.id === selectedGuideId),
-    );
-  }, [events, selectedGuideId]);
+      const matchesProvider =
+        !selectedProvider || event.meta?.providerName === selectedProvider;
+
+      const matchesOperator =
+        !selectedOperator || event.meta?.operatorName === selectedOperator;
+
+      return matchesCity && matchesProvider && matchesOperator;
+    });
+  }, [events, selectedCity, selectedProvider, selectedOperator]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
-
   function handlePrev() {
-    setSelectedDate((d) =>
-      shiftDate(d, view === "week" ? -7 : -1),
-    );
+    setSelectedDate((d) => shiftDate(d, view === "week" ? -7 : -1));
   }
-
   function handleNext() {
-    setSelectedDate((d) =>
-      shiftDate(d, view === "week" ? 7 : 1),
-    );
+    setSelectedDate((d) => shiftDate(d, view === "week" ? 7 : 1));
   }
-
   function handleToday() {
     setSelectedDate(today);
   }
@@ -179,8 +140,6 @@ function CalendarView() {
     setSelectedEventId(null);
   }
 
-  // ── Agrupar eventos por fecha ────────────────────────────────────────────
-
   const eventsByDate = filteredEvents.reduce<Record<string, CalendarEvent[]>>(
     (acc, e) => {
       if (!acc[e.date]) acc[e.date] = [];
@@ -190,11 +149,9 @@ function CalendarView() {
     {},
   );
 
-  const selectedEvent =
-    events.find((e) => e.id === selectedEventId) ?? null;
+  const selectedEvent = events.find((e) => e.id === selectedEventId) ?? null;
 
-  // ── Vista de evento ──────────────────────────────────────────────────────
-
+  // ── Vista de evento ──
   if (selectedEvent) {
     return (
       <EventPage
@@ -208,11 +165,9 @@ function CalendarView() {
     );
   }
 
-  // ── Vista de calendario ──────────────────────────────────────────────────
-
+  // ── Vista de calendario ──
   return (
     <div className="flex flex-col h-full w-full bg-base-100">
-
       {/* HEADER DESKTOP */}
       <header className="hidden md:block flex-none">
         <CalendarHeader
@@ -222,24 +177,16 @@ function CalendarView() {
           onPrev={handlePrev}
           onNext={handleNext}
           onToday={handleToday}
-
-          // Crear evento manual
-          onCreateEvent={() => setModalOpen(true)}
-
-          // NUEVO: cargar documento
-          onUploadDocument={() => setUploadModalOpen(true)}
-
           onRefetch={refetch}
-
-          guides={guides.map((g) => g.name)}
-          selectedGuide={
-            guides.find((g) => g.id === selectedGuideId)?.name ?? ""
-          }
-          onGuideChange={(name) =>
-            setSelectedGuideId(
-              guides.find((g) => g.name === name)?.id ?? "",
-            )
-          }
+          cities={cities}
+          selectedCity={selectedCity}
+          onCityChange={setSelectedCity}
+          providers={providers}
+          selectedProvider={selectedProvider}
+          onProviderChange={setSelectedProvider}
+          operators={operators}
+          selectedOperator={selectedOperator}
+          onOperatorChange={setSelectedOperator}
         />
       </header>
 
@@ -258,11 +205,7 @@ function CalendarView() {
       {error && (
         <div className="flex items-center justify-between px-4 py-2 bg-error/10 border-b border-error/20 text-sm text-error flex-none">
           <span>Error cargando eventos: {error}</span>
-
-          <button
-            onClick={refetch}
-            className="btn btn-xs btn-ghost text-error"
-          >
+          <button onClick={refetch} className="btn btn-xs btn-ghost text-error">
             Reintentar
           </button>
         </div>
@@ -270,26 +213,23 @@ function CalendarView() {
 
       {/* CUERPO */}
       <div className="flex flex-1 overflow-hidden">
-
-        {/* SIDEBAR */}
-        <aside className="hidden md:flex md:flex-col w-[270px] shrink-0 overflow-y-auto bg-base-100/50 p-2 gap-3">
+        {/* Lateral */}
+        <aside className="hidden md:flex md:flex-col w-[270px] shrink-0 border-r border-base-content/10 overflow-y-auto bg-base-100/50 p-2 gap-3">
           <BoardMonth
             selectedDate={selectedDate}
             onSelectDate={handleSelectDate}
             eventsByDate={eventsByDate}
           />
+          <GuideAvailabilityPanel selectedDate={selectedDate} events={events} />
         </aside>
 
-        {/* MAIN */}
+        {/* Main */}
         <main className="flex-1 overflow-hidden relative">
-
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/70 backdrop-blur-sm">
               <div className="flex flex-col items-center gap-3">
                 <span className="loading loading-spinner loading-md text-primary" />
-                <span className="text-sm opacity-50">
-                  Cargando eventos...
-                </span>
+                <span className="text-sm opacity-50">Cargando eventos...</span>
               </div>
             </div>
           )}
@@ -299,10 +239,6 @@ function CalendarView() {
             <BoardDay
               selectedDate={selectedDate}
               events={filteredEvents}
-
-              // NUEVO
-              onUploadDocument={() => setUploadModalOpen(true)}
-
               onSelectEvent={setSelectedEventId}
             />
           </div>
@@ -318,7 +254,6 @@ function CalendarView() {
               <BoardWeek
                 selectedDate={selectedDate}
                 events={filteredEvents}
-                onCreateEvent={() => setModalOpen(true)}
                 onSelectEvent={setSelectedEventId}
               />
             </div>
@@ -335,39 +270,12 @@ function CalendarView() {
               <BoardDay
                 selectedDate={selectedDate}
                 events={filteredEvents}
-
-                // NUEVO
-                onUploadDocument={() => setUploadModalOpen(true)}
-
                 onSelectEvent={setSelectedEventId}
               />
             </div>
           </div>
         </main>
       </div>
-
-      {/* MODAL crear evento manual */}
-      {modalOpen && (
-        <CreateEventModal
-          initialDate={selectedDate}
-          events={filteredEvents}
-          onClose={() => setModalOpen(false)}
-          onSave={(input) =>
-            addEvent({
-              tour_type: input.title,
-              date: input.date,
-              start_time: input.time,
-            })
-          }
-        />
-      )}
-
-      {/* MODAL cargar documento */}
-      {uploadModalOpen && (
-        <UploadTourDocumentModal
-          onClose={() => setUploadModalOpen(false)}
-        />
-      )}
     </div>
   );
 }
